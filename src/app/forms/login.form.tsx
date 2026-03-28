@@ -1,5 +1,8 @@
 'use client';
 
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import {
   Button,
   Description,
@@ -12,19 +15,38 @@ import {
 } from '@heroui/react';
 
 export function LoginForm() {
-  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const router = useRouter();
+  const [message, setMessage] = useState('');
+  const [isPending, startTransition] = useTransition();
+
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const data: Record<string, string> = {};
+    const email = formData.get('email');
+    const password = formData.get('password');
 
-    // Convert FormData to plain object
-    formData.forEach((value, key) => {
-      data[key] = value.toString();
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      setMessage('Не удалось прочитать данные формы.');
+      return;
+    }
+
+    startTransition(async () => {
+      setMessage('');
+
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (!result || result.error) {
+        setMessage('Неверная почта или пароль.');
+        return;
+      }
+
+      setMessage('Вход выполнен успешно.');
+      router.refresh();
     });
-
-    alert(
-      `Форма "Вход" отправлена с данными: ${JSON.stringify(data, null, 2)}`,
-    );
   };
 
   return (
@@ -48,18 +70,15 @@ export function LoginForm() {
 
       <TextField
         isRequired
-        minLength={8}
+        minLength={6}
         name="password"
         type="password"
         validate={(value) => {
-          if (value.length < 8) {
-            return 'Пароль должен содержать не менее 8 символов';
+          if (value.length < 6) {
+            return 'Пароль должен содержать не менее 6 символов';
           }
           if (!/[A-Z]/.test(value)) {
             return 'Пароль должен содержать хотя бы одну заглавную букву';
-          }
-          if (!/[0-9]/.test(value)) {
-            return 'Пароль должен содержать хотя бы одну цифру';
           }
 
           return null;
@@ -67,18 +86,29 @@ export function LoginForm() {
       >
         <Label>Пароль</Label>
         <Input placeholder="Введите пароль" />
-        <Description>
-          Не менее 8 символов, 1 заглавная буква и 1 цифра
-        </Description>
+        <Description>Не менее 6 символов и 1 заглавная буква</Description>
         <FieldError />
       </TextField>
 
+      {message ? (
+        <p
+          aria-live="polite"
+          className={
+            message === 'Вход выполнен успешно.'
+              ? 'text-sm text-success'
+              : 'text-sm text-danger'
+          }
+        >
+          {message}
+        </p>
+      ) : null}
+
       <div className="flex gap-2">
-        <Button type="submit">
+        <Button isDisabled={isPending} type="submit">
           <SuccessIcon />
-          Вход
+          {isPending ? 'Вход...' : 'Вход'}
         </Button>
-        <Button type="reset" variant="secondary">
+        <Button isDisabled={isPending} type="reset" variant="secondary">
           Сбросить
         </Button>
       </div>

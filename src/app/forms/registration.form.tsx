@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useActionState, useRef } from 'react';
 import {
   Button,
   Description,
@@ -12,29 +12,18 @@ import {
   TextField,
 } from '@heroui/react';
 
+import { registerUser } from '@/actions/register';
+import { initialRegisterFormState } from '@/types/form-data';
+
 export function RegistartionForm() {
   const passwordRef = useRef<HTMLInputElement>(null);
-
-  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data: Record<string, string> = {};
-
-    // Convert FormData to plain object
-    formData.forEach((value, key) => {
-      data[key] = value.toString();
-    });
-
-    if (data.password !== data.confirmPassword) {
-      alert('Пароли не совпадают');
-      return;
-    }
-
-    alert(`Форма отправлена с данными: ${JSON.stringify(data, null, 2)}`);
-  };
+  const [state, formAction, pending] = useActionState(
+    registerUser,
+    initialRegisterFormState,
+  );
 
   return (
-    <Form className="flex w-96 flex-col gap-4" onSubmit={onSubmit}>
+    <Form action={formAction} className="flex w-96 flex-col gap-4">
       <TextField
         isRequired
         name="email"
@@ -50,22 +39,22 @@ export function RegistartionForm() {
         <Label>Электронная почта</Label>
         <Input placeholder="john@example.com" />
         <FieldError />
+        {state.errors.email?.[0] ? (
+          <p className="text-sm text-danger">{state.errors.email[0]}</p>
+        ) : null}
       </TextField>
 
       <TextField
         isRequired
-        minLength={8}
+        minLength={6}
         name="password"
         type="password"
         validate={(value) => {
-          if (value.length < 8) {
-            return 'Пароль должен содержать не менее 8 символов';
+          if (value.length < 6) {
+            return 'Пароль должен содержать не менее 6 символов';
           }
           if (!/[A-Z]/.test(value)) {
             return 'Пароль должен содержать хотя бы одну заглавную букву';
-          }
-          if (!/[0-9]/.test(value)) {
-            return 'Пароль должен содержать хотя бы одну цифру';
           }
 
           return null;
@@ -73,10 +62,11 @@ export function RegistartionForm() {
       >
         <Label>Пароль</Label>
         <Input placeholder="Введите пароль" ref={passwordRef} />
-        <Description>
-          Не менее 8 символов, 1 заглавная буква и 1 цифра
-        </Description>
+        <Description>Не менее 6 символов и 1 заглавная буква</Description>
         <FieldError />
+        {state.errors.password?.[0] ? (
+          <p className="text-sm text-danger">{state.errors.password[0]}</p>
+        ) : null}
       </TextField>
 
       <TextField
@@ -95,14 +85,32 @@ export function RegistartionForm() {
         <Input placeholder="Повторите пароль" />
         <Description>Повторно введите пароль для проверки</Description>
         <FieldError />
+        {state.errors.confirmPassword?.[0] ? (
+          <p className="text-sm text-danger">
+            {state.errors.confirmPassword[0]}
+          </p>
+        ) : null}
       </TextField>
 
+      {state.message ? (
+        <p
+          aria-live="polite"
+          className={
+            state.status === 'success'
+              ? 'text-sm text-success'
+              : 'text-sm text-danger'
+          }
+        >
+          {state.message}
+        </p>
+      ) : null}
+
       <div className="flex gap-2">
-        <Button type="submit">
+        <Button isDisabled={pending} type="submit">
           <SuccessIcon />
-          Отправить
+          {pending ? 'Отправка...' : 'Отправить'}
         </Button>
-        <Button type="reset" variant="secondary">
+        <Button isDisabled={pending} type="reset" variant="secondary">
           Сбросить
         </Button>
       </div>
