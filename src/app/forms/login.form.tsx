@@ -22,7 +22,9 @@ export function LoginForm() {
       data[key] = value.toString();
     });
 
-    alert(`Форма "Вход" отправлена с данными: ${JSON.stringify(data, null, 2)}`);
+    alert(
+      `Форма "Вход" отправлена с данными: ${JSON.stringify(data, null, 2)}`,
+    );
   };
 
   return (
