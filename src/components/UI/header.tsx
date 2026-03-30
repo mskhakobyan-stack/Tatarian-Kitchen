@@ -4,8 +4,11 @@ import { useTransition } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
+import { signOut } from 'next-auth/react';
 import { Button, Header, Modal, Toolbar } from '@heroui/react';
+
+import { useAuthStore } from '@/auth/auth-store';
+
 import { LoginForm } from '../../app/forms/login.form';
 import { RegistartionForm } from '../../app/forms/registration.form';
 
@@ -40,13 +43,19 @@ export const SiteLogo = () => {
 export default function HeaderBar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = useSession();
   const [isSigningOut, startTransition] = useTransition();
-  const userEmail = session?.user?.email;
+  const authStatus = useAuthStore((store) => store.status);
+  const userEmail = useAuthStore((store) => store.user?.email ?? null);
+  const clearAuth = useAuthStore((store) => store.clearAuth);
+  const setStatus = useAuthStore((store) => store.setStatus);
+  const isAuthenticated =
+    authStatus === 'authenticated' && Boolean(userEmail);
 
   const handleSignOut = () => {
     startTransition(async () => {
+      setStatus('loading');
       await signOut({ redirect: false });
+      clearAuth();
       router.refresh();
     });
   };
@@ -88,7 +97,7 @@ export default function HeaderBar() {
           })}
         </Toolbar>
 
-        {userEmail ? (
+        {isAuthenticated ? (
           <div className="flex items-center gap-3 rounded-full border border-[#e1c795] bg-[#fff2da] px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.55)]">
             <p className="text-sm font-medium tracking-[0.01em] text-[#6a3b14]">
               Здравствуйте, {userEmail}!

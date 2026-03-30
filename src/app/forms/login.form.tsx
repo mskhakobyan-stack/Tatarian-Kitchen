@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { getSession, signIn } from 'next-auth/react';
 import {
   Button,
   Description,
@@ -14,10 +14,20 @@ import {
   TextField,
 } from '@heroui/react';
 
+import {
+  PASSWORD_MAX_LENGTH,
+  validateEmailValue,
+  validatePasswordValue,
+} from '@/auth/auth-validation';
+import { useAuthStore } from '@/auth/auth-store';
+
 export function LoginForm() {
   const router = useRouter();
   const [message, setMessage] = useState('');
   const [isPending, startTransition] = useTransition();
+  const clearAuth = useAuthStore((store) => store.clearAuth);
+  const setStatus = useAuthStore((store) => store.setStatus);
+  const syncSession = useAuthStore((store) => store.syncSession);
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -32,6 +42,7 @@ export function LoginForm() {
 
     startTransition(async () => {
       setMessage('');
+      setStatus('loading');
 
       const result = await signIn('credentials', {
         email,
@@ -40,10 +51,14 @@ export function LoginForm() {
       });
 
       if (!result || result.error) {
+        clearAuth();
         setMessage('Неверная почта или пароль.');
         return;
       }
 
+      const session = await getSession();
+
+      syncSession(session);
       setMessage('Вход выполнен успешно.');
       router.refresh();
     });
@@ -55,13 +70,7 @@ export function LoginForm() {
         isRequired
         name="email"
         type="email"
-        validate={(value) => {
-          if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value)) {
-            return 'Введите корректный адрес электронной почты';
-          }
-
-          return null;
-        }}
+        validate={validateEmailValue}
       >
         <Label>Электронная почта</Label>
         <Input placeholder="john@example.com" />
@@ -73,20 +82,16 @@ export function LoginForm() {
         minLength={6}
         name="password"
         type="password"
-        validate={(value) => {
-          if (value.length < 6) {
-            return 'Пароль должен содержать не менее 6 символов';
-          }
-          if (!/[A-Z]/.test(value)) {
-            return 'Пароль должен содержать хотя бы одну заглавную букву';
-          }
-
-          return null;
-        }}
+        validate={validatePasswordValue}
       >
         <Label>Пароль</Label>
-        <Input placeholder="Введите пароль" />
-        <Description>Не менее 6 символов и 1 заглавная буква</Description>
+        <Input
+          maxLength={PASSWORD_MAX_LENGTH}
+          placeholder="Введите пароль"
+        />
+        <Description>
+          От 6 до 32 символов и не менее 1 заглавной буквы
+        </Description>
         <FieldError />
       </TextField>
 

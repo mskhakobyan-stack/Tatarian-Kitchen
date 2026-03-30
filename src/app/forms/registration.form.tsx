@@ -12,6 +12,11 @@ import {
   TextField,
 } from '@heroui/react';
 
+import {
+  PASSWORD_MAX_LENGTH,
+  validateEmailValue,
+  validatePasswordValue,
+} from '@/auth/auth-validation';
 import { registerUser } from '@/actions/register';
 import { initialRegisterFormState } from '@/types/form-data';
 
@@ -28,13 +33,7 @@ export function RegistartionForm() {
         isRequired
         name="email"
         type="email"
-        validate={(value) => {
-          if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value)) {
-            return 'Введите корректный адрес электронной почты';
-          }
-
-          return null;
-        }}
+        validate={validateEmailValue}
       >
         <Label>Электронная почта</Label>
         <Input placeholder="john@example.com" />
@@ -49,20 +48,17 @@ export function RegistartionForm() {
         minLength={6}
         name="password"
         type="password"
-        validate={(value) => {
-          if (value.length < 6) {
-            return 'Пароль должен содержать не менее 6 символов';
-          }
-          if (!/[A-Z]/.test(value)) {
-            return 'Пароль должен содержать хотя бы одну заглавную букву';
-          }
-
-          return null;
-        }}
+        validate={validatePasswordValue}
       >
         <Label>Пароль</Label>
-        <Input placeholder="Введите пароль" ref={passwordRef} />
-        <Description>Не менее 6 символов и 1 заглавная буква</Description>
+        <Input
+          maxLength={PASSWORD_MAX_LENGTH}
+          placeholder="Введите пароль"
+          ref={passwordRef}
+        />
+        <Description>
+          От 6 до 32 символов и не менее 1 заглавной буквы
+        </Description>
         <FieldError />
         {state.errors.password?.[0] ? (
           <p className="text-sm text-danger">{state.errors.password[0]}</p>
@@ -82,7 +78,10 @@ export function RegistartionForm() {
         }}
       >
         <Label>Подтвердите пароль</Label>
-        <Input placeholder="Повторите пароль" />
+        <Input
+          maxLength={PASSWORD_MAX_LENGTH}
+          placeholder="Повторите пароль"
+        />
         <Description>Повторно введите пароль для проверки</Description>
         <FieldError />
         {state.errors.confirmPassword?.[0] ? (

@@ -1,31 +1,15 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
-import { scryptSync, timingSafeEqual } from 'node:crypto';
 import { ZodError } from 'zod';
 
+import { verifyPassword } from '@/auth/password';
 import { prisma } from '@/lib/prisma';
 import { signInSchema } from '@/schema/zod';
 
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
 
-function verifyPassword(password: string, storedPassword: string): boolean {
-  const [salt, storedHash] = storedPassword.split(':');
-
-  if (!salt || !storedHash) {
-    return false;
-  }
-
-  const derivedHash = scryptSync(password, salt, 64);
-  const storedHashBuffer = Buffer.from(storedHash, 'hex');
-
-  if (storedHashBuffer.length !== derivedHash.length) {
-    return false;
-  }
-
-  return timingSafeEqual(storedHashBuffer, derivedHash);
-}
-
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   session: {
     strategy: 'jwt',
     maxAge: SESSION_MAX_AGE,
@@ -74,11 +58,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
           const user = await prisma.user.findUnique({
             where: {
-              email: email.toLowerCase(),
+              email,
             },
           });
 
-          if (!user || !verifyPassword(password, user.password)) {
+          if (!user || !(await verifyPassword(password, user.password))) {
             return null;
           }
 

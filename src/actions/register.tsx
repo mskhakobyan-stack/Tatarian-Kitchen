@@ -1,78 +1,52 @@
 'use server';
 
-import { randomBytes, scryptSync } from 'node:crypto';
-
 import { Prisma } from '@/generated/prisma/client';
+import { hashPassword } from '@/auth/password';
 import { prisma } from '@/lib/prisma';
-import {
-  type RegisterFormErrors,
-  type RegisterFormFields,
-  type RegisterFormState,
-} from '@/types/form-data';
-
-const EMAIL_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+import { registerSchema } from '@/schema/zod';
+import { type RegisterFormState } from '@/types/form-data';
 
 function getFormValue(
   formData: FormData,
-  key: keyof RegisterFormFields,
+  key: 'email' | 'password' | 'confirmPassword',
 ): string {
   const value = formData.get(key);
 
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function validateRegisterForm(
-  data: RegisterFormFields,
-): RegisterFormErrors {
-  const errors: RegisterFormErrors = {};
-
-  if (!EMAIL_REGEX.test(data.email)) {
-    errors.email = ['Введите корректный адрес электронной почты'];
+  if (typeof value !== 'string') {
+    return '';
   }
 
-  if (data.password.length < 6) {
-    errors.password = ['Пароль должен содержать не менее 6 символов'];
-  } else if (!/[A-Z]/.test(data.password)) {
-    errors.password = ['Пароль должен содержать хотя бы одну заглавную букву'];
-  }
-
-  if (data.confirmPassword !== data.password) {
-    errors.confirmPassword = ['Пароли должны совпадать'];
-  }
-
-  return errors;
-}
-
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, 64).toString('hex');
-
-  return `${salt}:${hash}`;
+  return key === 'email' ? value.trim() : value;
 }
 
 export async function registerUser(
   _prevState: RegisterFormState,
   formData: FormData,
 ): Promise<RegisterFormState> {
-  const data: RegisterFormFields = {
-    email: getFormValue(formData, 'email').toLowerCase(),
+  const result = await registerSchema.safeParseAsync({
+    email: getFormValue(formData, 'email'),
     password: getFormValue(formData, 'password'),
     confirmPassword: getFormValue(formData, 'confirmPassword'),
-  };
+  });
 
-  const errors = validateRegisterForm(data);
-
-  if (Object.keys(errors).length > 0) {
+  if (!result.success) {
+    const errors = result.error.flatten().fieldErrors;
     return {
       status: 'error',
       message: 'Проверьте данные формы и попробуйте снова.',
-      errors,
+      errors: {
+        email: errors.email ?? [],
+        password: errors.password ?? [],
+        confirmPassword: errors.confirmPassword ?? [],
+      },
     };
   }
 
+  const { email, password } = result.data;
+
   try {
     const existingUser = await prisma.user.findUnique({
-      where: { email: data.email },
+      where: { email },
     });
 
     if (existingUser) {
@@ -87,8 +61,8 @@ export async function registerUser(
 
     await prisma.user.create({
       data: {
-        email: data.email,
-        password: hashPassword(data.password),
+        email,
+        password: await hashPassword(password),
       },
     });
 
