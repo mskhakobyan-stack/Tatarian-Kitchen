@@ -24,5 +24,6 @@ yarn-error.log*
 .turbo
 *.tsbuildinfo
 .DS_Store
+next-env.d.ts
 
 /src/generated/prisma

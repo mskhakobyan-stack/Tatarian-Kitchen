@@ -1,7 +1,9 @@
+/* Подключаем Tailwind v4 и стили HeroUI на уровне всего приложения. */
 @import 'tailwindcss';
 @import '@heroui/styles';
 @custom-variant dark (&:is(.dark *));
 
+/* Базовые цветовые токены для светлой темы. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -13,6 +15,7 @@
     Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
+/* Пробрасываем CSS-переменные в Tailwind-токены, чтобы классы и тема жили вместе. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -20,6 +23,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Подстраиваем палитру под системную тёмную тему, даже если UI позже будет расширяться. */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -27,6 +31,7 @@
   }
 }
 
+/* Глобальный слой задаёт фон, цвет текста и типографику для всего дерева приложения. */
 body {
   background: var(--background);
   color: var(--foreground);

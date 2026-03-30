@@ -11,6 +11,12 @@ interface AuthSessionProviderProps {
   session: Session | null;
 }
 
+/**
+ * Здесь собираем все клиентские провайдеры, связанные с авторизацией.
+ *
+ * `SessionProvider` отдаёт данные next-auth, `AuthStoreProvider` строит локальный
+ * Zustand-store, а `AuthSessionBridge` держит их синхронными между собой.
+ */
 export function AuthSessionProvider({
   children,
   session,

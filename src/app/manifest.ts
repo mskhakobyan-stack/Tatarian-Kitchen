@@ -1,10 +1,16 @@
 import type { MetadataRoute } from 'next';
 
+import { siteMetadata } from '@/content/site-content';
+
+/**
+ * Web App Manifest описывает, как сайт выглядит при установке как PWA.
+ * Берём базовое название и описание из общего контентного слоя.
+ */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Татарская кухня',
-    short_name: 'Татарская кухня',
-    description: 'Рецепты татарской кухни',
+    name: siteMetadata.name,
+    short_name: siteMetadata.name,
+    description: siteMetadata.description,
     start_url: '/',
     scope: '/',
     display: 'standalone',

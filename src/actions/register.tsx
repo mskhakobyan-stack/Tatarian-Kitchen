@@ -1,15 +1,31 @@
 'use server';
 
-import { Prisma } from '@/generated/prisma/client';
+import { randomUUID } from 'node:crypto';
+
 import { hashPassword } from '@/auth/password';
 import { prisma } from '@/lib/prisma';
 import { registerSchema } from '@/schema/zod';
-import { type RegisterFormState } from '@/types/form-data';
+import type {
+  RegisterFieldName,
+  RegisterFormErrors,
+  RegisterFormFields,
+  RegisterFormState,
+} from '@/types/form-data';
 
-function getFormValue(
-  formData: FormData,
-  key: 'email' | 'password' | 'confirmPassword',
-): string {
+const DUPLICATE_EMAIL_MESSAGE = 'Пользователь с такой почтой уже существует.';
+const REGISTRATION_SUCCESS_MESSAGE = 'Пользователь успешно зарегистрирован.';
+const UNKNOWN_REGISTRATION_ERROR_MESSAGE =
+  'Не удалось сохранить пользователя. Попробуйте ещё раз.';
+
+interface CreatedUserRow {
+  id: string;
+}
+
+/**
+ * Безопасно читаем строковые значения из FormData и не даём `File` или `null`
+ * попасть в схему валидации.
+ */
+function getFormValue(formData: FormData, key: RegisterFieldName): string {
   const value = formData.get(key);
 
   if (typeof value !== 'string') {
@@ -19,78 +35,104 @@ function getFormValue(
   return key === 'email' ? value.trim() : value;
 }
 
+/**
+ * Собираем сырые значения формы в объект, который ожидает zod-схема.
+ */
+function getRegisterFormValues(formData: FormData): RegisterFormFields {
+  return {
+    email: getFormValue(formData, 'email'),
+    password: getFormValue(formData, 'password'),
+    confirmPassword: getFormValue(formData, 'confirmPassword'),
+  };
+}
+
+/**
+ * Формируем единый объект ошибки для `useActionState`.
+ */
+function createErrorState(
+  message: string,
+  errors: RegisterFormErrors = {},
+): RegisterFormState {
+  return {
+    status: 'error',
+    message,
+    errors,
+  };
+}
+
+/**
+ * Ответ для кейса, когда email уже занят.
+ */
+function createDuplicateEmailState(): RegisterFormState {
+  return createErrorState(DUPLICATE_EMAIL_MESSAGE, {
+    email: [DUPLICATE_EMAIL_MESSAGE],
+  });
+}
+
+/**
+ * Приводим ошибки zod к форме, которую легко читать интерфейсу.
+ */
+function createValidationErrorState(
+  errors: RegisterFormErrors,
+): RegisterFormState {
+  return createErrorState('Проверьте данные формы и попробуйте снова.', {
+    email: errors.email ?? [],
+    password: errors.password ?? [],
+    confirmPassword: errors.confirmPassword ?? [],
+  });
+}
+
+/**
+ * Создаём пользователя через raw SQL, чтобы не зависеть от stale Prisma metadata
+ * в dev-сервере. `ON CONFLICT` одновременно защищает от дублей и гонок.
+ */
+async function insertUser(
+  email: string,
+  password: string,
+): Promise<CreatedUserRow | null> {
+  const createdUsers = await prisma.$queryRaw<CreatedUserRow[]>`
+    insert into users (id, email, password, created_at, updated_at)
+    values (${randomUUID()}, ${email}, ${await hashPassword(password)}, now(), now())
+    on conflict (email) do nothing
+    returning id
+  `;
+
+  return createdUsers[0] ?? null;
+}
+
+/**
+ * Серверный action валидирует данные, проверяет уникальность email,
+ * хеширует пароль и сохраняет пользователя в базу.
+ */
 export async function registerUser(
   _prevState: RegisterFormState,
   formData: FormData,
 ): Promise<RegisterFormState> {
-  const result = await registerSchema.safeParseAsync({
-    email: getFormValue(formData, 'email'),
-    password: getFormValue(formData, 'password'),
-    confirmPassword: getFormValue(formData, 'confirmPassword'),
-  });
+  const result = await registerSchema.safeParseAsync(
+    getRegisterFormValues(formData),
+  );
 
   if (!result.success) {
-    const errors = result.error.flatten().fieldErrors;
-    return {
-      status: 'error',
-      message: 'Проверьте данные формы и попробуйте снова.',
-      errors: {
-        email: errors.email ?? [],
-        password: errors.password ?? [],
-        confirmPassword: errors.confirmPassword ?? [],
-      },
-    };
+    return createValidationErrorState(result.error.flatten().fieldErrors);
   }
 
   const { email, password } = result.data;
 
   try {
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
+    const createdUser = await insertUser(email, password);
 
-    if (existingUser) {
-      return {
-        status: 'error',
-        message: 'Пользователь с такой почтой уже существует.',
-        errors: {
-          email: ['Пользователь с такой почтой уже существует'],
-        },
-      };
+    if (!createdUser) {
+      return createDuplicateEmailState();
     }
-
-    await prisma.user.create({
-      data: {
-        email,
-        password: await hashPassword(password),
-      },
-    });
 
     return {
       status: 'success',
-      message: 'Пользователь успешно зарегистрирован.',
+      message: REGISTRATION_SUCCESS_MESSAGE,
       errors: {},
     };
   } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002'
-    ) {
-      return {
-        status: 'error',
-        message: 'Пользователь с такой почтой уже существует.',
-        errors: {
-          email: ['Пользователь с такой почтой уже существует'],
-        },
-      };
-    }
-
     console.error('Failed to register user', error);
 
-    return {
-      status: 'error',
-      message: 'Не удалось сохранить пользователя. Попробуйте ещё раз.',
-      errors: {},
-    };
+    return createErrorState(UNKNOWN_REGISTRATION_ERROR_MESSAGE);
   }
 }

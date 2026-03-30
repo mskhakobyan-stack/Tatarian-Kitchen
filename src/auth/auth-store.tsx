@@ -10,6 +10,10 @@ import type { Session } from 'next-auth';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
+/**
+ * Статус храним отдельно, чтобы UI мог показывать промежуточные состояния
+ * вроде "идёт вход" или "идёт выход", не дожидаясь обновления сессии.
+ */
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
 interface AuthUser {
@@ -32,6 +36,9 @@ interface AuthActions {
 type AuthStore = AuthState & AuthActions;
 type AuthStoreApi = ReturnType<typeof createAuthStore>;
 
+/**
+ * Превращаем объект `session.user` в упрощённую форму для клиентского стора.
+ */
 function getAuthUser(session: Session | null): AuthUser | null {
   const user = session?.user;
 
@@ -39,16 +46,16 @@ function getAuthUser(session: Session | null): AuthUser | null {
     return null;
   }
 
-  const userId =
-    'id' in user && typeof user.id === 'string' ? user.id : null;
-
   return {
-    id: userId,
+    id: typeof user.id === 'string' ? user.id : null,
     email: typeof user.email === 'string' ? user.email : null,
     name: typeof user.name === 'string' ? user.name : null,
   };
 }
 
+/**
+ * Из сессии получаем состояние, которое удобно читать любому компоненту интерфейса.
+ */
 function getAuthState(
   session: Session | null,
   status: AuthStatus = session ? 'authenticated' : 'unauthenticated',
@@ -59,6 +66,10 @@ function getAuthState(
   };
 }
 
+/**
+ * Создаём store один раз на провайдер и описываем все публичные операции
+ * вокруг авторизации в одном месте.
+ */
 function createAuthStore(initialSession: Session | null) {
   return createStore<AuthStore>()((set) => ({
     ...getAuthState(initialSession),
@@ -73,7 +84,22 @@ function createAuthStore(initialSession: Session | null) {
         status,
       })),
     syncSession: (session, status) =>
-      set(() => getAuthState(session, status)),
+      set((state) => {
+        /**
+         * `useSession()` может на короткое время уйти в `loading` без данных.
+         * В этот момент не хотим терять уже известного пользователя и мигать UI.
+         */
+        if (status === 'loading') {
+          const nextUser = getAuthUser(session) ?? state.user;
+
+          return {
+            status: nextUser ? 'authenticated' : state.status,
+            user: nextUser,
+          };
+        }
+
+        return getAuthState(session, status);
+      }),
   }));
 }
 
@@ -84,6 +110,10 @@ interface AuthStoreProviderProps {
   initialSession: Session | null;
 }
 
+/**
+ * Провайдер стабилизирует экземпляр стора через `useState`, чтобы он
+ * не пересоздавался на каждом рендере оболочки.
+ */
 export function AuthStoreProvider({
   children,
   initialSession,
@@ -97,6 +127,10 @@ export function AuthStoreProvider({
   );
 }
 
+/**
+ * Внешний хук скрывает детали работы Zustand и гарантирует,
+ * что store используется только внутри провайдера.
+ */
 export function useAuthStore<T>(selector: (store: AuthStore) => T): T {
   const store = useContext(AuthStoreContext);
 

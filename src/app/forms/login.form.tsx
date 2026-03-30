@@ -17,55 +17,96 @@ import {
 import {
   PASSWORD_MAX_LENGTH,
   validateEmailValue,
-  validatePasswordValue,
+  validatePasswordLengthValue,
 } from '@/auth/auth-validation';
 import { useAuthStore } from '@/auth/auth-store';
+import { FormStatusMessage } from '@/components/UI/form-feedback';
+import { PasswordVisibilityToggle } from '@/components/UI/password-visibility-toggle';
 
+const LOGIN_ERROR_MESSAGE = 'Не удалось выполнить вход. Попробуйте ещё раз.';
+const LOGIN_SUCCESS_MESSAGE = 'Вход выполнен успешно.';
+
+/**
+ * Достаём email и пароль из формы в одном месте, чтобы код обработчика
+ * отправки оставался компактным и читался сверху вниз.
+ */
+function getCredentialsFromForm(formElement: HTMLFormElement) {
+  const formData = new FormData(formElement);
+  const email = formData.get('email');
+  const password = formData.get('password');
+
+  if (typeof email !== 'string' || typeof password !== 'string') {
+    return null;
+  }
+
+  return { email, password };
+}
+
+/**
+ * Форма входа работает целиком на клиенте:
+ * она валидирует поля, вызывает `signIn`, а затем синхронизирует local store.
+ */
 export function LoginForm() {
   const router = useRouter();
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [message, setMessage] = useState('');
   const [isPending, startTransition] = useTransition();
   const clearAuth = useAuthStore((store) => store.clearAuth);
-  const setStatus = useAuthStore((store) => store.setStatus);
   const syncSession = useAuthStore((store) => store.syncSession);
 
-  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email');
-    const password = formData.get('password');
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const credentials = getCredentialsFromForm(event.currentTarget);
 
-    if (typeof email !== 'string' || typeof password !== 'string') {
+    if (!credentials) {
       setMessage('Не удалось прочитать данные формы.');
       return;
     }
 
     startTransition(async () => {
       setMessage('');
-      setStatus('loading');
+      try {
+        const result = await signIn('credentials', {
+          email: credentials.email,
+          password: credentials.password,
+          redirect: false,
+        });
 
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      });
+        if (!result || result.error) {
+          clearAuth();
+          setMessage('Неверная почта или пароль.');
+          return;
+        }
 
-      if (!result || result.error) {
+        const session = await getSession();
+
+        if (!session?.user) {
+          clearAuth();
+          setMessage(LOGIN_ERROR_MESSAGE);
+          return;
+        }
+
+        // Обновляем локальный store сразу, чтобы хедер и приветствие отреагировали без задержки.
+        syncSession(session);
+        setMessage(LOGIN_SUCCESS_MESSAGE);
+        router.refresh();
+      } catch (error) {
+        console.error('Failed to sign in', error);
         clearAuth();
-        setMessage('Неверная почта или пароль.');
-        return;
+        setMessage(LOGIN_ERROR_MESSAGE);
       }
-
-      const session = await getSession();
-
-      syncSession(session);
-      setMessage('Вход выполнен успешно.');
-      router.refresh();
     });
   };
 
   return (
-    <Form className="flex w-96 flex-col gap-4" onSubmit={onSubmit}>
+    <Form
+      className="flex w-96 flex-col gap-4"
+      onReset={() => {
+        setMessage('');
+        setIsPasswordVisible(false);
+      }}
+      onSubmit={handleSubmit}
+    >
       <TextField
         isRequired
         name="email"
@@ -81,32 +122,26 @@ export function LoginForm() {
         isRequired
         minLength={6}
         name="password"
-        type="password"
-        validate={validatePasswordValue}
+        type={isPasswordVisible ? 'text' : 'password'}
+        validate={validatePasswordLengthValue}
       >
         <Label>Пароль</Label>
         <Input
           maxLength={PASSWORD_MAX_LENGTH}
           placeholder="Введите пароль"
         />
-        <Description>
-          От 6 до 32 символов и не менее 1 заглавной буквы
-        </Description>
+        <PasswordVisibilityToggle
+          isVisible={isPasswordVisible}
+          onToggle={() => setIsPasswordVisible((current) => !current)}
+        />
+        <Description>От 6 до 32 символов</Description>
         <FieldError />
       </TextField>
 
-      {message ? (
-        <p
-          aria-live="polite"
-          className={
-            message === 'Вход выполнен успешно.'
-              ? 'text-sm text-success'
-              : 'text-sm text-danger'
-          }
-        >
-          {message}
-        </p>
-      ) : null}
+      <FormStatusMessage
+        message={message}
+        tone={message === LOGIN_SUCCESS_MESSAGE ? 'success' : 'error'}
+      />
 
       <div className="flex gap-2">
         <Button isDisabled={isPending} type="submit">

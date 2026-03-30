@@ -1,22 +1,17 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { Button, Header, Modal, Toolbar } from '@heroui/react';
+import { Button, Header, Toolbar } from '@heroui/react';
 
+import { LoginForm } from '@/app/forms/login.form';
+import { RegistrationForm } from '@/app/forms/registration.form';
 import { useAuthStore } from '@/auth/auth-store';
-
-import { LoginForm } from '../../app/forms/login.form';
-import { RegistartionForm } from '../../app/forms/registration.form';
-
-const navItems = [
-  { href: '/recipes', label: 'Рецепты' },
-  { href: '/ingredients', label: 'Ингредиенты' },
-  { href: '/about', label: 'О нас' },
-];
+import { AuthDialog } from '@/components/UI/auth-dialog';
+import { navigationItems, siteMetadata } from '@/content/site-content';
 
 const navLinkBaseClassName =
   'rounded-full border px-4 py-2 text-sm font-semibold tracking-[0.02em] transition-all duration-200';
@@ -27,6 +22,21 @@ const filledButtonClassName =
 const softButtonClassName =
   'border border-[#d6b47f] bg-[#fff3dd] px-4 text-sm font-semibold tracking-[0.02em] text-[#6a3b14] transition-colors hover:bg-[#f8e6bf]';
 
+/**
+ * Небольшой helper держит логику активной/неактивной ссылки отдельно от JSX.
+ */
+function getNavLinkClassName(isActive: boolean): string {
+  return `${navLinkBaseClassName} ${
+    isActive
+      ? 'border-[#6d3a14] bg-[#6d3a14] text-[#fff8ed] shadow-sm'
+      : 'border-transparent text-[#7a532a] hover:border-[#e1c694] hover:bg-[#fff0cf] hover:text-[#5a3110]'
+  }`;
+}
+
+/**
+ * Логотип вынесен в отдельный компонент, чтобы его было проще переиспользовать
+ * в будущем, например, в footer или мобильном меню.
+ */
 export const SiteLogo = () => {
   return (
     <Image
@@ -40,23 +50,35 @@ export const SiteLogo = () => {
   );
 };
 
+/**
+ * Хедер показывает навигацию и текущий auth-state пользователя.
+ *
+ * Серверную сессию он напрямую не читает: вместо этого работает через Zustand-store,
+ * который уже синхронизирован с next-auth в других слоях приложения.
+ */
 export default function HeaderBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [signOutError, setSignOutError] = useState('');
   const [isSigningOut, startTransition] = useTransition();
   const authStatus = useAuthStore((store) => store.status);
   const userEmail = useAuthStore((store) => store.user?.email ?? null);
   const clearAuth = useAuthStore((store) => store.clearAuth);
-  const setStatus = useAuthStore((store) => store.setStatus);
   const isAuthenticated =
     authStatus === 'authenticated' && Boolean(userEmail);
 
   const handleSignOut = () => {
     startTransition(async () => {
-      setStatus('loading');
-      await signOut({ redirect: false });
-      clearAuth();
-      router.refresh();
+      setSignOutError('');
+
+      try {
+        await signOut({ redirect: false });
+        clearAuth();
+        router.refresh();
+      } catch (error) {
+        console.error('Failed to sign out', error);
+        setSignOutError('Не удалось выйти. Попробуйте ещё раз.');
+      }
     });
   };
 
@@ -69,7 +91,7 @@ export default function HeaderBar() {
         >
           <SiteLogo />
           <span className="text-base font-semibold tracking-[0.04em] text-[#5a3110] sm:text-lg">
-            Татарская кухня
+            {siteMetadata.name}
           </span>
         </Link>
 
@@ -77,18 +99,14 @@ export default function HeaderBar() {
           className="hidden items-center gap-3 sm:flex"
           orientation="horizontal"
         >
-          {navItems.map(({ href, label }) => {
+          {navigationItems.map(({ href, label }) => {
             const isActive = pathname === href;
 
             return (
               <Link
                 key={href}
                 aria-current={isActive ? 'page' : undefined}
-                className={`${navLinkBaseClassName} ${
-                  isActive
-                    ? 'border-[#6d3a14] bg-[#6d3a14] text-[#fff8ed] shadow-sm'
-                    : 'border-transparent text-[#7a532a] hover:border-[#e1c694] hover:bg-[#fff0cf] hover:text-[#5a3110]'
-                }`}
+                className={getNavLinkClassName(isActive)}
                 href={href}
               >
                 {label}
@@ -98,61 +116,42 @@ export default function HeaderBar() {
         </Toolbar>
 
         {isAuthenticated ? (
-          <div className="flex items-center gap-3 rounded-full border border-[#e1c795] bg-[#fff2da] px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.55)]">
-            <p className="text-sm font-medium tracking-[0.01em] text-[#6a3b14]">
-              Здравствуйте, {userEmail}!
-            </p>
-            <Button
-              className={softButtonClassName}
-              isDisabled={isSigningOut}
-              onPress={handleSignOut}
-              variant="secondary"
-            >
-              {isSigningOut ? 'Выход...' : 'Выход'}
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-3 rounded-full border border-[#e1c795] bg-[#fff2da] px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.55)]">
+              <p className="text-sm font-medium tracking-[0.01em] text-[#6a3b14]">
+                Здравствуйте, {userEmail}!
+              </p>
+              <Button
+                className={softButtonClassName}
+                isDisabled={isSigningOut}
+                onPress={handleSignOut}
+                variant="secondary"
+              >
+                {isSigningOut ? 'Выход...' : 'Выход'}
+              </Button>
+            </div>
+            {signOutError ? (
+              <p className="text-sm text-danger">{signOutError}</p>
+            ) : null}
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <Modal>
-              <Modal.Trigger>
-                <Button className={softButtonClassName} variant="secondary">
-                  Вход
-                </Button>
-              </Modal.Trigger>
-              <Modal.Backdrop>
-                <Modal.Container placement="center" size="md">
-                  <Modal.Dialog>
-                    <Modal.Header className="items-center justify-between">
-                      <Modal.Heading>Вход</Modal.Heading>
-                      <Modal.CloseTrigger />
-                    </Modal.Header>
-                    <Modal.Body>
-                      <LoginForm />
-                    </Modal.Body>
-                  </Modal.Dialog>
-                </Modal.Container>
-              </Modal.Backdrop>
-            </Modal>
-            <Modal>
-              <Modal.Trigger>
-                <Button className={filledButtonClassName} variant="primary">
-                  Регистрация
-                </Button>
-              </Modal.Trigger>
-              <Modal.Backdrop>
-                <Modal.Container placement="center" size="md">
-                  <Modal.Dialog>
-                    <Modal.Header className="items-center justify-between">
-                      <Modal.Heading>Регистрация</Modal.Heading>
-                      <Modal.CloseTrigger />
-                    </Modal.Header>
-                    <Modal.Body>
-                      <RegistartionForm />
-                    </Modal.Body>
-                  </Modal.Dialog>
-                </Modal.Container>
-              </Modal.Backdrop>
-            </Modal>
+            <AuthDialog
+              buttonClassName={softButtonClassName}
+              buttonLabel="Вход"
+              buttonVariant="secondary"
+              heading="Вход"
+            >
+              <LoginForm />
+            </AuthDialog>
+            <AuthDialog
+              buttonClassName={filledButtonClassName}
+              buttonLabel="Регистрация"
+              buttonVariant="primary"
+              heading="Регистрация"
+            >
+              <RegistrationForm />
+            </AuthDialog>
           </div>
         )}
       </div>

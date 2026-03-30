@@ -1,11 +1,22 @@
+import { PageShell } from '@/components/UI/page-shell';
+import { aboutPageContent } from '@/content/site-content';
+import GlobalContentBanner from '@/components/UI/global-content-banner';
+
+/**
+ * Страница "О нас" собирается из двух отдельных частей:
+ * вводного баннера и текстовой статьи с абзацами из контентного слоя.
+ */
 export default function AboutPage() {
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-10">
-      <h1 className="text-4xl font-bold tracking-tight">О нас</h1>
-      <p className="max-w-2xl text-base text-black/70">
-        Здесь будет история проекта о татарской кухне, подборки рецептов и
-        заметки о традиционных блюдах.
-      </p>
-    </section>
+    <>
+      <GlobalContentBanner />
+      <PageShell title={aboutPageContent.title}>
+        <div className="flex max-w-2xl flex-col gap-6 text-base leading-7 text-black/70">
+          {aboutPageContent.paragraphs.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
+        </div>
+      </PageShell>
+    </>
   );
 }
