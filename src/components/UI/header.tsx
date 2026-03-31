@@ -11,16 +11,14 @@ import { LoginForm } from '@/app/forms/login.form';
 import { RegistrationForm } from '@/app/forms/registration.form';
 import { useAuthStore } from '@/auth/auth-store';
 import { AuthDialog } from '@/components/UI/auth-dialog';
+import {
+  filledButtonClassName,
+  softButtonClassName,
+} from '@/components/UI/ui-theme';
 import { navigationItems, siteMetadata } from '@/content/site-content';
 
 const navLinkBaseClassName =
   'rounded-full border px-4 py-2 text-sm font-semibold tracking-[0.02em] transition-all duration-200';
-
-const filledButtonClassName =
-  'border border-[#8b4418] bg-[#8b4418] px-4 text-sm font-semibold tracking-[0.02em] text-[#fff7eb] shadow-sm transition-colors hover:bg-[#743714]';
-
-const softButtonClassName =
-  'border border-[#d6b47f] bg-[#fff3dd] px-4 text-sm font-semibold tracking-[0.02em] text-[#6a3b14] transition-colors hover:bg-[#f8e6bf]';
 
 /**
  * Небольшой helper держит логику активной/неактивной ссылки отдельно от JSX.
@@ -28,8 +26,8 @@ const softButtonClassName =
 function getNavLinkClassName(isActive: boolean): string {
   return `${navLinkBaseClassName} ${
     isActive
-      ? 'border-[#6d3a14] bg-[#6d3a14] text-[#fff8ed] shadow-sm'
-      : 'border-transparent text-[#7a532a] hover:border-[#e1c694] hover:bg-[#fff0cf] hover:text-[#5a3110]'
+      ? 'border-[#dec4a7] bg-[#fff5ea]/76 text-[#6c4524] shadow-[0_10px_22px_-20px_rgba(96,53,11,0.3)] backdrop-blur-sm'
+      : 'border-transparent text-[#8b6742] hover:border-[#ead5bf] hover:bg-[#fff8ef]/76 hover:text-[#6a4524]'
   }`;
 }
 
@@ -41,7 +39,7 @@ export const SiteLogo = () => {
   return (
     <Image
       alt="Логотип сайта"
-      className="h-12 w-12 rounded-full border border-[#d7bb8b] bg-[#fff6e7] object-cover shadow-[0_10px_24px_-18px_rgba(96,53,11,0.85)]"
+      className="h-12 w-12 rounded-full border border-[#e6d2b9] bg-[#fffaf3]/76 object-cover shadow-[0_10px_24px_-18px_rgba(96,53,11,0.35)]"
       height={44}
       priority
       src="/site-logo.svg"
@@ -66,6 +64,9 @@ export default function HeaderBar() {
   const clearAuth = useAuthStore((store) => store.clearAuth);
   const isAuthenticated =
     authStatus === 'authenticated' && Boolean(userEmail);
+  const visibleNavigationItems = isAuthenticated
+    ? navigationItems
+    : navigationItems.filter(({ href }) => href !== '/ingredients');
 
   const handleSignOut = () => {
     startTransition(async () => {
@@ -83,14 +84,14 @@ export default function HeaderBar() {
   };
 
   return (
-    <Header className="border-b border-[#d9bd90] bg-[#fff8ec]/95 px-4 py-4 font-sans text-[#5a3110] shadow-[0_12px_34px_-28px_rgba(96,53,11,0.65)] backdrop-blur">
+    <Header className="border-b border-[#ead8c3] bg-[#fffbf6]/72 px-4 py-4 font-sans text-[#6a4524] shadow-[0_12px_32px_-28px_rgba(96,53,11,0.28)] backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
         <Link
           className="flex items-center gap-3 text-inherit no-underline"
           href="/"
         >
           <SiteLogo />
-          <span className="text-base font-semibold tracking-[0.04em] text-[#5a3110] sm:text-lg">
+          <span className="text-base font-semibold tracking-[0.04em] text-[#6a4524] sm:text-lg">
             {siteMetadata.name}
           </span>
         </Link>
@@ -99,7 +100,7 @@ export default function HeaderBar() {
           className="hidden items-center gap-3 sm:flex"
           orientation="horizontal"
         >
-          {navigationItems.map(({ href, label }) => {
+          {visibleNavigationItems.map(({ href, label }) => {
             const isActive = pathname === href;
 
             return (
@@ -117,8 +118,8 @@ export default function HeaderBar() {
 
         {isAuthenticated ? (
           <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-3 rounded-full border border-[#e1c795] bg-[#fff2da] px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.55)]">
-              <p className="text-sm font-medium tracking-[0.01em] text-[#6a3b14]">
+            <div className="flex items-center gap-3 rounded-full border border-[#ead8c3] bg-[#fffaf3]/70 px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.2)] backdrop-blur-sm">
+              <p className="text-sm font-medium tracking-[0.01em] text-[#7a5634]">
                 Здравствуйте, {userEmail}!
               </p>
               <Button

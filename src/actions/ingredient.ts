@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { auth } from '@/auth/auth';
 import { prisma } from '@/lib/prisma';
 import { ingredientSchema } from '@/schema/zod';
 import type {
@@ -24,6 +25,8 @@ const INGREDIENT_DELETE_ERROR_MESSAGE =
   'Не удалось удалить ингредиент. Попробуйте ещё раз.';
 const INGREDIENT_VALIDATION_ERROR_MESSAGE =
   'Проверьте данные формы и попробуйте снова.';
+const INGREDIENT_UNAUTHORIZED_MESSAGE =
+  'Страница ингредиентов доступна только после входа в аккаунт.';
 
 interface IngredientRow {
   id: string;
@@ -117,6 +120,16 @@ function createValidationErrorState(
 }
 
 /**
+ * Проверяем сессию внутри каждого server action: одной защиты страницы
+ * недостаточно, потому что action можно вызвать и напрямую.
+ */
+async function isAuthenticated(): Promise<boolean> {
+  const session = await auth();
+
+  return Boolean(session?.user);
+}
+
+/**
  * Сохраняем ингредиент через Prisma и сразу возвращаем минимальный набор полей
  * для подтверждения успешной записи в интерфейсе.
  */
@@ -169,6 +182,14 @@ export async function createIngredient(
   prevState: IngredientFormState,
   formData: FormData,
 ): Promise<IngredientFormState> {
+  if (!(await isAuthenticated())) {
+    return createErrorState(
+      INGREDIENT_UNAUTHORIZED_MESSAGE,
+      {},
+      prevState.ingredient,
+    );
+  }
+
   const result = await ingredientSchema.safeParseAsync(
     getIngredientFormValues(formData),
   );
@@ -209,6 +230,10 @@ export async function updateIngredient(
   id: string,
   fields: IngredientFormFields,
 ): Promise<IngredientFormState> {
+  if (!(await isAuthenticated())) {
+    return createErrorState(INGREDIENT_UNAUTHORIZED_MESSAGE);
+  }
+
   const result = await ingredientSchema.safeParseAsync(
     normalizeIngredientFields(fields),
   );
@@ -240,6 +265,14 @@ export async function updateIngredient(
 export async function deleteIngredient(
   id: string,
 ): Promise<IngredientDeleteResult> {
+  if (!(await isAuthenticated())) {
+    return {
+      status: 'error',
+      message: INGREDIENT_UNAUTHORIZED_MESSAGE,
+      deletedIngredientId: null,
+    };
+  }
+
   try {
     await prisma.ingredient.delete({
       where: { id },

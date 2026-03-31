@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getSession, signIn } from 'next-auth/react';
 import {
   Button,
@@ -22,6 +22,12 @@ import {
 import { useAuthStore } from '@/auth/auth-store';
 import { FormStatusMessage } from '@/components/UI/form-feedback';
 import { PasswordVisibilityToggle } from '@/components/UI/password-visibility-toggle';
+import {
+  authFormClassName,
+  filledButtonClassName,
+  formFieldClassName,
+  softButtonClassName,
+} from '@/components/UI/ui-theme';
 
 const LOGIN_ERROR_MESSAGE = 'Не удалось выполнить вход. Попробуйте ещё раз.';
 const LOGIN_SUCCESS_MESSAGE = 'Вход выполнен успешно.';
@@ -48,11 +54,19 @@ function getCredentialsFromForm(formElement: HTMLFormElement) {
  */
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [message, setMessage] = useState('');
   const [isPending, startTransition] = useTransition();
   const clearAuth = useAuthStore((store) => store.clearAuth);
   const syncSession = useAuthStore((store) => store.syncSession);
+  const callbackUrl = searchParams.get('callbackUrl');
+  const safeCallbackUrl =
+    callbackUrl &&
+    callbackUrl.startsWith('/') &&
+    !callbackUrl.startsWith('//')
+      ? callbackUrl
+      : null;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -89,6 +103,12 @@ export function LoginForm() {
         // Обновляем локальный store сразу, чтобы хедер и приветствие отреагировали без задержки.
         syncSession(session);
         setMessage(LOGIN_SUCCESS_MESSAGE);
+
+        if (safeCallbackUrl) {
+          router.replace(safeCallbackUrl);
+          return;
+        }
+
         router.refresh();
       } catch (error) {
         console.error('Failed to sign in', error);
@@ -100,7 +120,7 @@ export function LoginForm() {
 
   return (
     <Form
-      className="flex w-96 flex-col gap-4"
+      className={authFormClassName}
       onReset={() => {
         setMessage('');
         setIsPasswordVisible(false);
@@ -114,7 +134,10 @@ export function LoginForm() {
         validate={validateEmailValue}
       >
         <Label>Электронная почта</Label>
-        <Input placeholder="john@example.com" />
+        <Input
+          className={formFieldClassName}
+          placeholder="john@example.com"
+        />
         <FieldError />
       </TextField>
 
@@ -127,6 +150,7 @@ export function LoginForm() {
       >
         <Label>Пароль</Label>
         <Input
+          className={formFieldClassName}
           maxLength={PASSWORD_MAX_LENGTH}
           placeholder="Введите пароль"
         />
@@ -144,11 +168,20 @@ export function LoginForm() {
       />
 
       <div className="flex gap-2">
-        <Button isDisabled={isPending} type="submit">
+        <Button
+          className={filledButtonClassName}
+          isDisabled={isPending}
+          type="submit"
+        >
           <SuccessIcon />
           {isPending ? 'Вход...' : 'Вход'}
         </Button>
-        <Button isDisabled={isPending} type="reset" variant="secondary">
+        <Button
+          className={softButtonClassName}
+          isDisabled={isPending}
+          type="reset"
+          variant="secondary"
+        >
           Сбросить
         </Button>
       </div>

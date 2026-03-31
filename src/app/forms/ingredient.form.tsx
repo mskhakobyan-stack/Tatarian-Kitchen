@@ -19,6 +19,13 @@ import {
   FormStatusMessage,
 } from '@/components/UI/form-feedback';
 import {
+  filledButtonClassName,
+  formFieldClassName,
+  formSurfaceClassName,
+  selectTriggerClassName,
+  textAreaClassName,
+} from '@/components/UI/ui-theme';
+import {
   Category,
   Unit,
   type Category as CategoryValue,
@@ -136,7 +143,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
       <Form
         action={formAction}
         key={state.ingredient?.id ?? 'ingredient-form'}
-        className="flex w-full flex-col gap-2 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm backdrop-blur-sm"
+        className={`flex w-full flex-col gap-4 ${formSurfaceClassName} p-6`}
       >
         <TextField
           aria-label="Название ингредиента"
@@ -145,7 +152,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           validate={validateRequiredValue}
         >
           <Input
-            className="h-11"
+            className={formFieldClassName}
             maxLength={80}
             placeholder="Название ингредиента, например катык"
           />
@@ -160,9 +167,9 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
             name="category"
             placeholder="Категория"
           >
-            <Select.Trigger className="h-11 justify-between">
+            <Select.Trigger className={selectTriggerClassName}>
               <Select.Value />
-              <Select.Indicator className="shrink-0 text-black/45" />
+              <Select.Indicator className="shrink-0 text-[#9a744a]" />
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
@@ -187,9 +194,9 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
             name="unit"
             placeholder="Единица измерения"
           >
-            <Select.Trigger className="h-11 justify-between">
+            <Select.Trigger className={selectTriggerClassName}>
               <Select.Value />
-              <Select.Indicator className="shrink-0 text-black/45" />
+              <Select.Indicator className="shrink-0 text-[#9a744a]" />
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
@@ -217,7 +224,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
             validate={validatePriceValue}
           >
             <Input
-              className="h-11"
+              className={formFieldClassName}
               inputMode="decimal"
               min="0"
               placeholder="Цена, например 350"
@@ -235,10 +242,10 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           validate={validateDescriptionValue}
         >
           <TextArea
-            className="h-11 min-h-11 resize-none overflow-hidden"
+            className={`${textAreaClassName} resize-none overflow-hidden`}
             maxLength={300}
             placeholder="Описание ингредиента: вкус, применение или особенности"
-            rows={1}
+            rows={3}
           />
           <FieldError />
           <FieldServerError message={state.errors.description?.[0]} />
@@ -250,7 +257,11 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
         />
 
         <div className="flex">
-          <Button isDisabled={pending} type="submit">
+          <Button
+            className={filledButtonClassName}
+            isDisabled={pending}
+            type="submit"
+          >
             <SuccessIcon />
             {pending ? 'Сохранение...' : 'Добавить ингредиент'}
           </Button>

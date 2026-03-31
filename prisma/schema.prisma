@@ -31,6 +31,7 @@ model ingredient {
   unit Unit
   price Float?
   description String?
+  recipes RecipeIngredient[]
   
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -54,4 +55,27 @@ enum Unit {
   LITER
   MILLILITER
   PIECE
+}
+
+model Recipe {
+  id String @id @default(uuid())
+  name String
+  description String?
+  imageUrl String? @map("image_url")
+  ingredients RecipeIngredient[]
+  
+}
+
+model RecipeIngredient {
+  id String @id @default(uuid())
+  recipe Recipe @relation(fields: [recipeId], references: [id])
+  ingredient ingredient @relation(fields: [ingredientId], references: [id])
+  recipeId String
+  ingredientId String
+  quantity Float
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("recipe_ingredients")
 }

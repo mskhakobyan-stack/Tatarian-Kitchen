@@ -1,4 +1,7 @@
+import { redirect } from 'next/navigation';
+
 import { IngredientFormShell } from '@/app/forms/ingredient-form-shell';
+import { auth } from '@/auth/auth';
 import { PageShell } from '@/components/UI/page-shell';
 import { staticPageContent } from '@/content/site-content';
 import { prisma } from '@/lib/prisma';
@@ -8,6 +11,12 @@ import { prisma } from '@/lib/prisma';
  * а интерактивную работу с формой и таблицей отдаёт клиентскому слою.
  */
 export default async function IngredientsPage() {
+  const session = await auth();
+
+  if (!session?.user) {
+    redirect('/login?callbackUrl=%2Fingredients');
+  }
+
   const content = staticPageContent.ingredients;
   const ingredientRows = await prisma.ingredient.findMany({
     orderBy: {

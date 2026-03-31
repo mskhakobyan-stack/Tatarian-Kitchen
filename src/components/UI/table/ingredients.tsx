@@ -24,6 +24,20 @@ import {
   FormStatusMessage,
 } from '@/components/UI/form-feedback';
 import {
+  destructiveButtonClassName,
+  filledButtonClassName,
+  formFieldClassName,
+  formSurfaceClassName,
+  panelSurfaceClassName,
+  selectTriggerClassName,
+  softButtonClassName,
+  tableBodyCellClassName,
+  tableBodyRowClassName,
+  tableHeaderCellClassName,
+  tableShellClassName,
+  textAreaClassName,
+} from '@/components/UI/ui-theme';
+import {
   Category,
   Unit,
   type Category as CategoryValue,
@@ -191,57 +205,85 @@ export function IngredientsTable({
   };
 
   return (
-    <section className="flex w-full flex-col gap-4 rounded-3xl border border-black/10 bg-white/75 p-6 shadow-sm backdrop-blur-sm">
+    <section
+      className={`flex w-full flex-col gap-4 ${panelSurfaceClassName} p-6`}
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">
+          <h2 className="text-2xl font-semibold tracking-tight text-[#5a3110]">
             Добавленные ингредиенты
           </h2>
-          <p className="text-sm leading-6 text-black/65">
+          <p className="text-sm leading-6 text-[#7a532a]">
             Новые записи появляются здесь сразу после отправки формы.
           </p>
         </div>
-        <p className="text-sm font-medium text-black/55">
+        <p className="rounded-full border border-[#e1c795] bg-[#fff2da] px-3 py-1.5 text-sm font-medium text-[#6a3b14] shadow-[0_10px_24px_-20px_rgba(96,53,11,0.55)]">
           Всего ингредиентов: {ingredients.length}
         </p>
       </div>
 
       <FormStatusMessage message={statusMessage} tone={statusTone} />
 
-      <Table className="w-full">
-        <Table.ScrollContainer>
-          <Table.Content aria-label="Список ингредиентов">
+      <Table className={`w-full ${tableShellClassName}`}>
+        <Table.ScrollContainer className="rounded-[28px]">
+          <Table.Content
+            aria-label="Список ингредиентов"
+            className="min-w-full overflow-hidden"
+          >
             <Table.Header>
-              <Table.Column isRowHeader>Название</Table.Column>
-              <Table.Column>Категория</Table.Column>
-              <Table.Column>Ед. изм.</Table.Column>
-              <Table.Column>Цена</Table.Column>
-              <Table.Column>Описание</Table.Column>
-              <Table.Column>Действия</Table.Column>
+              <Table.Column className={tableHeaderCellClassName} isRowHeader>
+                Название
+              </Table.Column>
+              <Table.Column className={tableHeaderCellClassName}>
+                Категория
+              </Table.Column>
+              <Table.Column className={tableHeaderCellClassName}>
+                Ед. изм.
+              </Table.Column>
+              <Table.Column className={tableHeaderCellClassName}>
+                Цена
+              </Table.Column>
+              <Table.Column className={tableHeaderCellClassName}>
+                Описание
+              </Table.Column>
+              <Table.Column className={tableHeaderCellClassName}>
+                Действия
+              </Table.Column>
             </Table.Header>
 
             <Table.Body
               items={ingredients}
               renderEmptyState={() => (
-                <div className="px-4 py-10 text-center text-sm text-black/55">
+                <div className="px-4 py-10 text-center text-sm text-[#7a532a]">
                   Таблица пока пустая. Добавьте первый ингредиент через форму выше.
                 </div>
               )}
             >
               {(ingredient) => (
-                <Table.Row id={ingredient.id}>
-                  <Table.Cell>{ingredient.name}</Table.Cell>
-                  <Table.Cell>{getCategoryLabel(ingredient.category)}</Table.Cell>
-                  <Table.Cell>{getUnitLabel(ingredient.unit)}</Table.Cell>
-                  <Table.Cell>{PRICE_FORMATTER.format(ingredient.price)}</Table.Cell>
-                  <Table.Cell>
-                    <span className="max-w-md whitespace-normal text-sm leading-6 text-black/70">
+                <Table.Row className={tableBodyRowClassName} id={ingredient.id}>
+                  <Table.Cell className={tableBodyCellClassName}>
+                    <span className="font-semibold text-[#5a3110]">
+                      {ingredient.name}
+                    </span>
+                  </Table.Cell>
+                  <Table.Cell className={tableBodyCellClassName}>
+                    {getCategoryLabel(ingredient.category)}
+                  </Table.Cell>
+                  <Table.Cell className={tableBodyCellClassName}>
+                    {getUnitLabel(ingredient.unit)}
+                  </Table.Cell>
+                  <Table.Cell className={tableBodyCellClassName}>
+                    {PRICE_FORMATTER.format(ingredient.price)}
+                  </Table.Cell>
+                  <Table.Cell className={tableBodyCellClassName}>
+                    <span className="max-w-md whitespace-normal text-sm leading-6 text-[#6a4a26]">
                       {ingredient.description}
                     </span>
                   </Table.Cell>
-                  <Table.Cell>
+                  <Table.Cell className={tableBodyCellClassName}>
                     <div className="flex flex-wrap gap-2">
                       <Button
+                        className={softButtonClassName}
                         isDisabled={
                           isPending && pendingIngredientId === ingredient.id
                         }
@@ -251,7 +293,7 @@ export function IngredientsTable({
                         Редактировать
                       </Button>
                       <Button
-                        className="border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                        className={destructiveButtonClassName}
                         isDisabled={
                           isPending && pendingIngredientId === ingredient.id
                         }
@@ -273,15 +315,17 @@ export function IngredientsTable({
         <Modal state={editModalState}>
           <Modal.Backdrop>
             <Modal.Container placement="center" size="lg">
-              <Modal.Dialog>
-                <Modal.Header className="items-center justify-between">
+              <Modal.Dialog
+                className={`${formSurfaceClassName} overflow-hidden`}
+              >
+                <Modal.Header className="items-center justify-between border-b border-[#efe2d5] bg-[#fff8f1]/70 px-6 py-4">
                   <Modal.Heading>Редактирование ингредиента</Modal.Heading>
                   <Modal.CloseTrigger />
                 </Modal.Header>
-                <Modal.Body>
+                <Modal.Body className="bg-[#fffdfa]/56 px-6 py-5">
                   <Form
                     key={editingIngredient.id}
-                    className="flex flex-col gap-2"
+                    className="flex flex-col gap-4"
                     onSubmit={handleEditSubmit}
                   >
                     <TextField
@@ -291,7 +335,7 @@ export function IngredientsTable({
                       name="name"
                     >
                       <Input
-                        className="h-11"
+                        className={formFieldClassName}
                         maxLength={80}
                         placeholder="Название ингредиента, например катык"
                       />
@@ -307,9 +351,9 @@ export function IngredientsTable({
                         name="category"
                         placeholder="Категория"
                       >
-                        <Select.Trigger className="h-11 justify-between">
+                        <Select.Trigger className={selectTriggerClassName}>
                           <Select.Value />
-                          <Select.Indicator className="shrink-0 text-black/45" />
+                          <Select.Indicator className="shrink-0 text-[#9a744a]" />
                         </Select.Trigger>
                         <Select.Popover>
                           <ListBox>
@@ -335,9 +379,9 @@ export function IngredientsTable({
                         name="unit"
                         placeholder="Единица измерения"
                       >
-                        <Select.Trigger className="h-11 justify-between">
+                        <Select.Trigger className={selectTriggerClassName}>
                           <Select.Value />
-                          <Select.Indicator className="shrink-0 text-black/45" />
+                          <Select.Indicator className="shrink-0 text-[#9a744a]" />
                         </Select.Trigger>
                         <Select.Popover>
                           <ListBox>
@@ -365,7 +409,7 @@ export function IngredientsTable({
                         type="number"
                       >
                         <Input
-                          className="h-11"
+                          className={formFieldClassName}
                           inputMode="decimal"
                           min="0"
                           placeholder="Цена, например 350"
@@ -383,10 +427,10 @@ export function IngredientsTable({
                       name="description"
                     >
                       <TextArea
-                        className="h-11 min-h-11 resize-none overflow-hidden"
+                        className={`${textAreaClassName} resize-none overflow-hidden`}
                         maxLength={300}
                         placeholder="Описание ингредиента: вкус, применение или особенности"
-                        rows={1}
+                        rows={3}
                       />
                       <FieldError />
                       <FieldServerError message={editState.errors.description?.[0]} />
@@ -399,6 +443,7 @@ export function IngredientsTable({
 
                     <div className="flex flex-wrap gap-2">
                       <Button
+                        className={filledButtonClassName}
                         isDisabled={
                           isPending && pendingIngredientId === editingIngredient.id
                         }
@@ -409,6 +454,7 @@ export function IngredientsTable({
                           : 'Сохранить'}
                       </Button>
                       <Button
+                        className={softButtonClassName}
                         isDisabled={
                           isPending && pendingIngredientId === editingIngredient.id
                         }

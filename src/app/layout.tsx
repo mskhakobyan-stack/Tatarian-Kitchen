@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 import { auth } from '@/auth/auth';
-import HeaderBar from '@/components/UI/header';
+import { HeaderBarShell } from '@/components/UI/header-shell';
 import { siteMetadata } from '@/content/site-content';
 
 import './globals.css';
@@ -35,7 +35,7 @@ export default async function RootLayout({
     <html lang={siteMetadata.language} className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <AuthSessionProvider session={session}>
-          <HeaderBar />
+          <HeaderBarShell />
           <main className="flex-1">{children}</main>
         </AuthSessionProvider>
       </body>

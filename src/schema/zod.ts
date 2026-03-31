@@ -77,6 +77,25 @@ const ingredientDescriptionSchema = string()
   .min(10, 'Описание должно содержать минимум 10 символов')
   .max(300, 'Описание должно содержать не более 300 символов');
 
+const recipeNameSchema = string()
+  .trim()
+  .min(1, 'Название рецепта обязательно')
+  .max(120, 'Название рецепта должно содержать не более 120 символов');
+
+const recipeDescriptionSchema = string()
+  .trim()
+  .min(1, 'Добавьте описание рецепта')
+  .min(20, 'Описание должно содержать минимум 20 символов')
+  .max(600, 'Описание должно содержать не более 600 символов');
+
+const recipeImageSourceSchema = string()
+  .trim()
+  .refine((value) => value === 'url' || value === 'file', 'Выберите источник изображения');
+
+const recipeImageUrlSchema = string()
+  .trim()
+  .max(2048, 'Ссылка на изображение слишком длинная');
+
 /**
  * При входе достаточно email и пароля.
  */
@@ -115,4 +134,19 @@ export const ingredientSchema = object({
   name: ingredientNameSchema,
   price: ingredientPriceSchema,
   unit: ingredientUnitSchema,
+});
+
+/**
+ * Базовая схема рецепта валидирует текстовые поля, а проверка файла
+ * и обязательности изображения выполняется отдельно на сервере.
+ */
+export const recipeSchema = object({
+  currentImageUrl: recipeImageUrlSchema,
+  description: recipeDescriptionSchema,
+  ingredientsPayload: string()
+    .trim()
+    .min(1, 'Добавьте хотя бы один ингредиент'),
+  imageSource: recipeImageSourceSchema,
+  imageUrl: recipeImageUrlSchema,
+  name: recipeNameSchema,
 });

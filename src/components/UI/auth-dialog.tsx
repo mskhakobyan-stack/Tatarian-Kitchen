@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Button, Modal } from '@heroui/react';
 
+import { formSurfaceClassName } from '@/components/UI/ui-theme';
+
 interface AuthDialogProps {
   buttonClassName: string;
   buttonLabel: string;
@@ -31,12 +33,14 @@ export function AuthDialog({
       </Modal.Trigger>
       <Modal.Backdrop>
         <Modal.Container placement="center" size="md">
-          <Modal.Dialog>
-            <Modal.Header className="items-center justify-between">
+          <Modal.Dialog className={`${formSurfaceClassName} overflow-hidden`}>
+            <Modal.Header className="items-center justify-between border-b border-[#efe2d5] bg-[#fff8f1]/70 px-6 py-4">
               <Modal.Heading>{heading}</Modal.Heading>
               <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body>{children}</Modal.Body>
+            <Modal.Body className="bg-[#fffdfa]/56 px-6 py-5">
+              {children}
+            </Modal.Body>
           </Modal.Dialog>
         </Modal.Container>
       </Modal.Backdrop>

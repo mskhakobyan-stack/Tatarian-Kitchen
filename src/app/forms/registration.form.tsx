@@ -23,6 +23,12 @@ import {
   FormStatusMessage,
 } from '@/components/UI/form-feedback';
 import { PasswordVisibilityToggle } from '@/components/UI/password-visibility-toggle';
+import {
+  authFormClassName,
+  filledButtonClassName,
+  formFieldClassName,
+  softButtonClassName,
+} from '@/components/UI/ui-theme';
 import { initialRegisterFormState } from '@/types/form-data';
 
 /**
@@ -56,7 +62,7 @@ export function RegistrationForm() {
   return (
     <Form
       action={formAction}
-      className="flex w-96 flex-col gap-4"
+      className={authFormClassName}
       onReset={() => {
         setIsPasswordVisible(false);
         setIsConfirmPasswordVisible(false);
@@ -69,7 +75,10 @@ export function RegistrationForm() {
         validate={validateEmailValue}
       >
         <Label>Электронная почта</Label>
-        <Input placeholder="john@example.com" />
+        <Input
+          className={formFieldClassName}
+          placeholder="john@example.com"
+        />
         <FieldError />
         <FieldServerError message={state.errors.email?.[0]} />
       </TextField>
@@ -83,6 +92,7 @@ export function RegistrationForm() {
       >
         <Label>Пароль</Label>
         <Input
+          className={formFieldClassName}
           maxLength={PASSWORD_MAX_LENGTH}
           placeholder="Введите пароль"
           ref={passwordInputRef}
@@ -108,6 +118,7 @@ export function RegistrationForm() {
       >
         <Label>Подтвердите пароль</Label>
         <Input
+          className={formFieldClassName}
           maxLength={PASSWORD_MAX_LENGTH}
           placeholder="Повторите пароль"
         />
@@ -128,11 +139,20 @@ export function RegistrationForm() {
       />
 
       <div className="flex gap-2">
-        <Button isDisabled={pending} type="submit">
+        <Button
+          className={filledButtonClassName}
+          isDisabled={pending}
+          type="submit"
+        >
           <SuccessIcon />
           {pending ? 'Отправка...' : 'Отправить'}
         </Button>
-        <Button isDisabled={pending} type="reset" variant="secondary">
+        <Button
+          className={softButtonClassName}
+          isDisabled={pending}
+          type="reset"
+          variant="secondary"
+        >
           Сбросить
         </Button>
       </div>
