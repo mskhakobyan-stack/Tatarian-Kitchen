@@ -6,6 +6,12 @@ import {
   PASSWORD_UPPERCASE_REGEX,
   normalizeEmail,
 } from '@/auth/auth-validation';
+import {
+  Category,
+  Unit,
+  type Category as CategoryValue,
+  type Unit as UnitValue,
+} from '@/generated/prisma/enums';
 
 /**
  * Базовая схема email одновременно проверяет формат и нормализует значение,
@@ -30,6 +36,46 @@ const passwordSchema = string()
     PASSWORD_MAX_LENGTH,
     `Пароль должен содержать не более ${PASSWORD_MAX_LENGTH} символов`,
   );
+
+function isCategoryValue(value: string): value is CategoryValue {
+  return Object.values(Category).includes(value as CategoryValue);
+}
+
+function isUnitValue(value: string): value is UnitValue {
+  return Object.values(Unit).includes(value as UnitValue);
+}
+
+function parsePrice(value: string): number {
+  return Number(value.trim().replace(',', '.'));
+}
+
+const ingredientNameSchema = string()
+  .trim()
+  .min(1, 'Поле обязательно для заполнения')
+  .max(80, 'Название должно содержать не более 80 символов');
+
+const ingredientCategorySchema = string()
+  .trim()
+  .refine(isCategoryValue, 'Выберите категорию')
+  .transform((value) => value as CategoryValue);
+
+const ingredientUnitSchema = string()
+  .trim()
+  .refine(isUnitValue, 'Выберите единицу измерения')
+  .transform((value) => value as UnitValue);
+
+const ingredientPriceSchema = string()
+  .trim()
+  .min(1, 'Укажите цену ингредиента')
+  .refine((value) => !Number.isNaN(parsePrice(value)), 'Введите число')
+  .transform(parsePrice)
+  .refine((value) => value >= 0, 'Цена не может быть отрицательной');
+
+const ingredientDescriptionSchema = string()
+  .trim()
+  .min(1, 'Добавьте короткое описание ингредиента')
+  .min(10, 'Описание должно содержать минимум 10 символов')
+  .max(300, 'Описание должно содержать не более 300 символов');
 
 /**
  * При входе достаточно email и пароля.
@@ -58,4 +104,15 @@ export const registerSchema = object({
       path: ['confirmPassword'],
     });
   }
+});
+
+/**
+ * Схема ингредиента приводит значения формы к тем типам, которые уже ожидает БД.
+ */
+export const ingredientSchema = object({
+  category: ingredientCategorySchema,
+  description: ingredientDescriptionSchema,
+  name: ingredientNameSchema,
+  price: ingredientPriceSchema,
+  unit: ingredientUnitSchema,
 });

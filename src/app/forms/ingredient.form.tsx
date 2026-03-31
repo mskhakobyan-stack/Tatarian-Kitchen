@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useActionState, useEffect, useRef } from 'react';
 import {
   Button,
-  Description,
   FieldError,
   Form,
   Input,
-  Label,
   ListBox,
   Select,
   SuccessIcon,
@@ -15,21 +13,21 @@ import {
   TextField,
 } from '@heroui/react';
 
-import { FormStatusMessage } from '@/components/UI/form-feedback';
+import { createIngredient } from '@/actions/ingredient';
+import {
+  FieldServerError,
+  FormStatusMessage,
+} from '@/components/UI/form-feedback';
 import {
   Category,
   Unit,
   type Category as CategoryValue,
   type Unit as UnitValue,
 } from '@/generated/prisma/browser';
-
-interface IngredientDraft {
-  category: CategoryValue;
-  description: string;
-  name: string;
-  price: number;
-  unit: UnitValue;
-}
+import {
+  initialIngredientFormState,
+  type SavedIngredient,
+} from '@/types/ingredient-form';
 
 interface IngredientOption<T extends string> {
   label: string;
@@ -66,64 +64,6 @@ const UNIT_OPTIONS: IngredientOption<UnitValue>[] = Object.values(Unit).map(
     value,
   }),
 );
-
-const PRICE_FORMATTER = new Intl.NumberFormat('ru-RU', {
-  currency: 'RUB',
-  maximumFractionDigits: 2,
-  style: 'currency',
-});
-
-function isCategoryValue(value: string): value is CategoryValue {
-  return Object.values(Category).includes(value as CategoryValue);
-}
-
-function isUnitValue(value: string): value is UnitValue {
-  return Object.values(Unit).includes(value as UnitValue);
-}
-
-function getCategoryLabel(category: CategoryValue): string {
-  return CATEGORY_LABELS[category];
-}
-
-function getUnitLabel(unit: UnitValue): string {
-  return UNIT_LABELS[unit];
-}
-
-/**
- * Безопасно достаём строку из `FormData`, чтобы форма не принимала `File`
- * и не разносила проверки по всему обработчику.
- */
-function getFormValue(formData: FormData, key: keyof IngredientDraft): string {
-  const value = formData.get(key);
-
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-/**
- * Собираем все значения формы в одном месте и сразу приводим цену к числу.
- */
-function getIngredientDraft(formElement: HTMLFormElement): IngredientDraft | null {
-  const formData = new FormData(formElement);
-  const category = getFormValue(formData, 'category');
-  const price = Number.parseFloat(getFormValue(formData, 'price'));
-  const unit = getFormValue(formData, 'unit');
-
-  if (
-    Number.isNaN(price) ||
-    !isCategoryValue(category) ||
-    !isUnitValue(unit)
-  ) {
-    return null;
-  }
-
-  return {
-    category,
-    description: getFormValue(formData, 'description'),
-    name: getFormValue(formData, 'name'),
-    price,
-    unit,
-  };
-}
 
 function validateRequiredValue(value: string): string | null {
   if (!value.trim()) {
@@ -164,189 +104,158 @@ function validateDescriptionValue(value: string): string | null {
 }
 
 /**
- * Клиентская форма собирает ввод по ингредиенту и показывает последнюю
- * отправленную запись прямо на странице, пока серверная часть ещё не нужна.
+ * Клиентская форма запускает серверный action и сообщает родителю о новой
+ * записи, чтобы таблица под формой обновлялась сразу же.
  */
-export function IngredientForm() {
-  const [formVersion, setFormVersion] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [statusTone, setStatusTone] = useState<'error' | 'success'>('success');
-  const [submittedIngredient, setSubmittedIngredient] =
-    useState<IngredientDraft | null>(null);
+interface IngredientFormProps {
+  onIngredientCreated?: (ingredient: SavedIngredient) => void;
+}
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const draft = getIngredientDraft(event.currentTarget);
+export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
+  const [state, formAction, pending] = useActionState(
+    createIngredient,
+    initialIngredientFormState,
+  );
+  const lastReportedIngredientIdRef = useRef<string | null>(null);
 
-    if (!draft) {
-      setStatusTone('error');
-      setStatusMessage('Не удалось прочитать цену ингредиента.');
+  useEffect(() => {
+    if (state.status !== 'success' || !state.ingredient) {
       return;
     }
 
-    setSubmittedIngredient(draft);
-    setStatusTone('success');
-    setStatusMessage(`Ингредиент «${draft.name}» сохранён в форме.`);
-    setFormVersion((current) => current + 1);
-  };
+    if (lastReportedIngredientIdRef.current === state.ingredient.id) {
+      return;
+    }
+
+    lastReportedIngredientIdRef.current = state.ingredient.id;
+    onIngredientCreated?.(state.ingredient);
+  }, [onIngredientCreated, state.ingredient, state.status]);
 
   return (
-    <div className="mt-6 flex w-full flex-col items-center gap-6">
+    <div className="mt-4 flex w-full flex-col gap-4">
       <Form
-        key={formVersion}
-        className="mx-auto flex w-full max-w-2xl flex-col gap-5 rounded-3xl border border-black/10 bg-white/80 p-6 shadow-sm backdrop-blur-sm lg:w-1/3"
-        onSubmit={handleSubmit}
+        action={formAction}
+        key={state.ingredient?.id ?? 'ingredient-form'}
+        className="flex w-full flex-col gap-2 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm backdrop-blur-sm"
       >
         <TextField
+          aria-label="Название ингредиента"
           isRequired
           name="name"
           validate={validateRequiredValue}
         >
-          <Label>Введите название ингредиента</Label>
           <Input
             className="h-11"
             maxLength={80}
-            placeholder="Например, катык"
+            placeholder="Название ингредиента, например катык"
           />
-          <Description>Короткое и понятное название продукта</Description>
           <FieldError />
+          <FieldServerError message={state.errors.name?.[0]} />
         </TextField>
 
-        <div className="grid w-full grid-cols-2 items-start gap-4 md:grid-cols-3">
+        <div className="grid w-full grid-cols-2 items-start gap-2 md:grid-cols-3">
           <Select
+            aria-label="Категория ингредиента"
             isRequired
             name="category"
+            placeholder="Категория"
           >
-            <Label>Категория</Label>
             <Select.Trigger className="h-11 justify-between">
-              <Select.Value>
-                {({ isPlaceholder, selectedText }) =>
-                  isPlaceholder ? 'Выберите' : selectedText
-                }
-              </Select.Value>
+              <Select.Value />
               <Select.Indicator className="shrink-0 text-black/45" />
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
                 {CATEGORY_OPTIONS.map(({ label, value }) => (
-                  <ListBox.Item id={value} key={value}>
+                  <ListBox.Item
+                    id={value}
+                    key={value}
+                    textValue={label}
+                  >
                     {label}
                   </ListBox.Item>
                 ))}
               </ListBox>
             </Select.Popover>
             <FieldError />
+            <FieldServerError message={state.errors.category?.[0]} />
           </Select>
 
           <Select
+            aria-label="Единица измерения ингредиента"
             isRequired
             name="unit"
+            placeholder="Единица измерения"
           >
-            <Label>Ед. изм.</Label>
             <Select.Trigger className="h-11 justify-between">
-              <Select.Value>
-                {({ isPlaceholder, selectedText }) =>
-                  isPlaceholder ? 'Выберите' : selectedText
-                }
-              </Select.Value>
+              <Select.Value />
               <Select.Indicator className="shrink-0 text-black/45" />
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
                 {UNIT_OPTIONS.map(({ label, value }) => (
-                  <ListBox.Item id={value} key={value}>
+                  <ListBox.Item
+                    id={value}
+                    key={value}
+                    textValue={label}
+                  >
                     {label}
                   </ListBox.Item>
                 ))}
               </ListBox>
             </Select.Popover>
             <FieldError />
+            <FieldServerError message={state.errors.unit?.[0]} />
           </Select>
 
           <TextField
+            aria-label="Цена ингредиента"
             className="col-span-2 md:col-span-1"
             isRequired
             name="price"
             type="number"
             validate={validatePriceValue}
           >
-            <Label>Цена</Label>
             <Input
               className="h-11"
               inputMode="decimal"
               min="0"
-              placeholder="350"
+              placeholder="Цена, например 350"
               step="0.01"
             />
             <FieldError />
+            <FieldServerError message={state.errors.price?.[0]} />
           </TextField>
         </div>
 
         <TextField
+          aria-label="Описание ингредиента"
           isRequired
           name="description"
           validate={validateDescriptionValue}
         >
-          <Label>Описание</Label>
           <TextArea
+            className="h-11 min-h-11 resize-none overflow-hidden"
             maxLength={300}
-            placeholder="Опишите вкус, применение или особенности ингредиента"
-            rows={5}
+            placeholder="Описание ингредиента: вкус, применение или особенности"
+            rows={1}
           />
-          <Description>
-            Подойдёт короткая заметка о составе, вкусе или применении
-          </Description>
           <FieldError />
+          <FieldServerError message={state.errors.description?.[0]} />
         </TextField>
 
         <FormStatusMessage
-          message={statusMessage}
-          tone={statusTone}
+          message={state.message}
+          tone={state.status === 'success' ? 'success' : 'error'}
         />
 
         <div className="flex">
-          <Button type="submit">
+          <Button isDisabled={pending} type="submit">
             <SuccessIcon />
-            Добавить ингредиент
+            {pending ? 'Сохранение...' : 'Добавить ингредиент'}
           </Button>
         </div>
       </Form>
-
-      {submittedIngredient ? (
-        <section className="w-full max-w-4xl rounded-3xl border border-black/10 bg-amber-50/70 p-6 shadow-sm">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Последний введённый ингредиент
-          </h2>
-          <dl className="mt-4 grid gap-4 md:grid-cols-3">
-            <div>
-              <dt className="text-sm text-black/60">Название</dt>
-              <dd className="text-base font-medium">{submittedIngredient.name}</dd>
-            </div>
-            <div>
-              <dt className="text-sm text-black/60">Категория</dt>
-              <dd className="text-base font-medium">
-                {getCategoryLabel(submittedIngredient.category)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm text-black/60">Ед. изм.</dt>
-              <dd className="text-base font-medium">
-                {getUnitLabel(submittedIngredient.unit)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm text-black/60">Цена</dt>
-              <dd className="text-base font-medium">
-                {PRICE_FORMATTER.format(submittedIngredient.price)}
-              </dd>
-            </div>
-          </dl>
-
-          <p className="mt-4 max-w-3xl text-base leading-7 text-black/75">
-            {submittedIngredient.description}
-          </p>
-        </section>
-      ) : null}
     </div>
   );
 }
