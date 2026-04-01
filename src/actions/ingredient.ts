@@ -3,6 +3,12 @@
 import { revalidatePath } from 'next/cache';
 
 import { auth } from '@/auth/auth';
+import { Prisma } from '@/generated/prisma/client';
+import {
+  normalizeStringFields,
+  pickStringFormValues,
+  type StringFormFieldConfig,
+} from '@/lib/form-data';
 import { prisma } from '@/lib/prisma';
 import { ingredientSchema } from '@/schema/zod';
 import type {
@@ -23,10 +29,19 @@ const INGREDIENT_UPDATE_ERROR_MESSAGE =
   'Не удалось обновить ингредиент. Попробуйте ещё раз.';
 const INGREDIENT_DELETE_ERROR_MESSAGE =
   'Не удалось удалить ингредиент. Попробуйте ещё раз.';
+const INGREDIENT_DELETE_IN_USE_MESSAGE =
+  'Нельзя удалить ингредиент, пока он используется в одном или нескольких рецептах.';
 const INGREDIENT_VALIDATION_ERROR_MESSAGE =
   'Проверьте данные формы и попробуйте снова.';
 const INGREDIENT_UNAUTHORIZED_MESSAGE =
   'Страница ингредиентов доступна только после входа в аккаунт.';
+const INGREDIENT_FORM_FIELDS = [
+  { key: 'category' },
+  { key: 'description' },
+  { key: 'name' },
+  { key: 'price' },
+  { key: 'unit' },
+] as const satisfies readonly StringFormFieldConfig<IngredientFieldName>[];
 
 interface IngredientRow {
   id: string;
@@ -38,41 +53,10 @@ interface IngredientRow {
 }
 
 /**
- * Безопасно достаём строковые значения из `FormData`, чтобы схема на сервере
- * всегда работала с предсказуемым набором полей.
- */
-function getFormValue(formData: FormData, key: IngredientFieldName): string {
-  const value = formData.get(key);
-
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-/**
  * Собираем сырые значения формы в объект, который затем валидирует zod.
  */
 function getIngredientFormValues(formData: FormData): IngredientFormFields {
-  return {
-    category: getFormValue(formData, 'category'),
-    description: getFormValue(formData, 'description'),
-    name: getFormValue(formData, 'name'),
-    price: getFormValue(formData, 'price'),
-    unit: getFormValue(formData, 'unit'),
-  };
-}
-
-/**
- * Нормализуем сырые поля, чтобы одинаково валидировать и создание, и обновление.
- */
-function normalizeIngredientFields(
-  fields: IngredientFormFields,
-): IngredientFormFields {
-  return {
-    category: fields.category.trim(),
-    description: fields.description.trim(),
-    name: fields.name.trim(),
-    price: fields.price.trim(),
-    unit: fields.unit.trim(),
-  };
+  return pickStringFormValues(formData, INGREDIENT_FORM_FIELDS);
 }
 
 /**
@@ -117,6 +101,15 @@ function createValidationErrorState(
     price: errors.price ?? [],
     unit: errors.unit ?? [],
   }, ingredient);
+}
+
+function isForeignKeyConstraintError(
+  error: unknown,
+): error is Prisma.PrismaClientKnownRequestError {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError
+    && error.code === 'P2003'
+  );
 }
 
 /**
@@ -235,7 +228,7 @@ export async function updateIngredient(
   }
 
   const result = await ingredientSchema.safeParseAsync(
-    normalizeIngredientFields(fields),
+    normalizeStringFields(fields),
   );
 
   if (!result.success) {
@@ -286,6 +279,14 @@ export async function deleteIngredient(
     };
   } catch (error) {
     console.error('Failed to delete ingredient', error);
+
+    if (isForeignKeyConstraintError(error)) {
+      return {
+        status: 'error',
+        message: INGREDIENT_DELETE_IN_USE_MESSAGE,
+        deletedIngredientId: null,
+      };
+    }
 
     return {
       status: 'error',

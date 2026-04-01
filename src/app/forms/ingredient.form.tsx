@@ -41,6 +41,10 @@ interface IngredientOption<T extends string> {
   value: T;
 }
 
+/**
+ * Справочники и select-опции держим рядом с формой, потому что они относятся
+ * только к интерфейсу выбора и не участвуют в server-side бизнес-логике.
+ */
 const CATEGORY_LABELS: Record<CategoryValue, string> = {
   [Category.VEGETABLE]: 'Овощи',
   [Category.FRUIT]: 'Фрукты',
@@ -85,7 +89,7 @@ function validatePriceValue(value: string): string | null {
     return 'Укажите цену ингредиента';
   }
 
-  const price = Number.parseFloat(value);
+  const price = Number(value.trim().replace(',', '.'));
 
   if (Number.isNaN(price)) {
     return 'Введите число';
@@ -119,12 +123,20 @@ interface IngredientFormProps {
 }
 
 export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
+  /**
+   * Форме нужен только server-action state и ref с последним отправленным id,
+   * чтобы родитель не получил повторный сигнал об одной и той же записи.
+   */
   const [state, formAction, pending] = useActionState(
     createIngredient,
     initialIngredientFormState,
   );
   const lastReportedIngredientIdRef = useRef<string | null>(null);
 
+  /**
+   * После успешного сохранения синхронизируем локальный список родителя
+   * без полной перезагрузки страницы.
+   */
   useEffect(() => {
     if (state.status !== 'success' || !state.ingredient) {
       return;
@@ -145,6 +157,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
         key={state.ingredient?.id ?? 'ingredient-form'}
         className={`flex w-full flex-col gap-4 ${formSurfaceClassName} p-6`}
       >
+        {/* Название показываем отдельным полем, потому что это главный идентификатор записи в UI. */}
         <TextField
           aria-label="Название ингредиента"
           isRequired
@@ -160,6 +173,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           <FieldServerError message={state.errors.name?.[0]} />
         </TextField>
 
+        {/* Категория, единица и цена собраны в одну строку как основные структурные атрибуты. */}
         <div className="grid w-full grid-cols-2 items-start gap-2 md:grid-cols-3">
           <Select
             aria-label="Категория ингредиента"
@@ -235,6 +249,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           </TextField>
         </div>
 
+        {/* Описание хранит пользовательский контекст: вкус, назначение и заметки по продукту. */}
         <TextField
           aria-label="Описание ингредиента"
           isRequired
@@ -256,6 +271,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           tone={state.status === 'success' ? 'success' : 'error'}
         />
 
+        {/* В этой форме достаточно одной primary-кнопки, потому что reset делает сам браузер. */}
         <div className="flex">
           <Button
             className={filledButtonClassName}

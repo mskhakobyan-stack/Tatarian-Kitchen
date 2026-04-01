@@ -34,6 +34,11 @@ import {
   softButtonClassName,
   textAreaClassName,
 } from '@/components/UI/ui-theme';
+import {
+  validateRecipeDescription,
+  validateRecipeImageUrl,
+  validateRecipeName,
+} from '@/lib/recipe-form';
 import type {
   RecipeImageSource,
   RecipeIngredientOption,
@@ -49,46 +54,6 @@ interface RecipeFormProps {
   onRecipeCreated?: (recipe: SavedRecipe) => void;
 }
 
-function validateRecipeName(value: string): string | null {
-  if (!value.trim()) {
-    return 'Название рецепта обязательно';
-  }
-
-  return null;
-}
-
-function validateRecipeDescription(value: string): string | null {
-  if (!value.trim()) {
-    return 'Добавьте описание рецепта';
-  }
-
-  if (value.trim().length < 20) {
-    return 'Описание должно содержать минимум 20 символов';
-  }
-
-  return null;
-}
-
-function validateImageUrl(value: string): string | null {
-  const trimmedValue = value.trim();
-
-  if (!trimmedValue) {
-    return 'Добавьте ссылку на изображение';
-  }
-
-  try {
-    const url = new URL(trimmedValue);
-
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return 'Ссылка должна начинаться с http:// или https://';
-    }
-  } catch {
-    return 'Введите корректную ссылку';
-  }
-
-  return null;
-}
-
 /**
  * Форма рецепта использует server action и локальный preview, чтобы пользователь
  * видел итоговую карточку ещё до отправки.
@@ -97,6 +62,10 @@ export function RecipeForm({
   availableIngredients = [],
   onRecipeCreated,
 }: RecipeFormProps) {
+  /**
+   * Основной state формы делим по зонам ответственности:
+   * server action state, источник картинки, локальный preview и черновик ингредиентов.
+   */
   const normalizedIngredients = availableIngredients ?? [];
   const [state, formAction, pending] = useActionState(
     createRecipe,
@@ -115,6 +84,10 @@ export function RecipeForm({
   const previewUrl =
     imageSource === 'url' ? deferredImageUrlValue.trim() : filePreviewUrl;
 
+  /**
+   * Локальные object URL нужно корректно чистить, иначе браузер удерживает
+   * память даже после переключения файла или размонтирования формы.
+   */
   const resetFilePreview = () => {
     if (filePreviewObjectUrlRef.current) {
       URL.revokeObjectURL(filePreviewObjectUrlRef.current);
@@ -137,6 +110,10 @@ export function RecipeForm({
     resetFormState();
   });
 
+  /**
+   * После успешного ответа сообщаем родителю о новом рецепте только один раз,
+   * даже если React повторно проигрывает эффекты в dev-режиме.
+   */
   useEffect(() => {
     if (state.status !== 'success' || !state.recipe) {
       return;
@@ -150,6 +127,10 @@ export function RecipeForm({
     handleRecipeSaved(state.recipe);
   }, [state.recipe, state.status]);
 
+  /**
+   * Финальная зачистка object URL нужна на случай ухода со страницы
+   * или пересборки клиентского дерева.
+   */
   useEffect(() => {
     return () => {
       if (filePreviewObjectUrlRef.current) {
@@ -169,8 +150,10 @@ export function RecipeForm({
         className={`flex w-full flex-col gap-5 ${formSurfaceClassName} p-6`}
         onReset={resetFormState}
       >
+        {/* Левая колонка отвечает за ввод данных, правая показывает живой preview карточки. */}
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
           <div className="flex flex-col gap-4">
+            {/* Базовые текстовые поля рецепта. */}
             <TextField
               aria-label="Название рецепта"
               isRequired
@@ -202,6 +185,7 @@ export function RecipeForm({
               <FieldServerError message={state.errors.description?.[0]} />
             </TextField>
 
+            {/* Служебные hidden-поля передают в action текущий режим картинки и состав рецепта. */}
             <input name="currentImageUrl" type="hidden" value="" />
             <input
               name="ingredientsPayload"
@@ -210,6 +194,7 @@ export function RecipeForm({
             />
             <input name="imageSource" type="hidden" value={imageSource} />
 
+            {/* Отдельный блок состава хранит строки ингредиентов в клиентском draft-state. */}
             <RecipeIngredientFields
               availableIngredients={normalizedIngredients}
               errorMessage={state.errors.ingredientsPayload?.[0]}
@@ -247,6 +232,7 @@ export function RecipeForm({
               rows={ingredientRows}
             />
 
+            {/* Блок изображения позволяет переключаться между внешней ссылкой и локальным файлом. */}
             <section className="flex flex-col gap-3">
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -286,7 +272,7 @@ export function RecipeForm({
                   aria-label="Ссылка на изображение рецепта"
                   isRequired
                   name="imageUrl"
-                  validate={validateImageUrl}
+                  validate={validateRecipeImageUrl}
                 >
                   <Input
                     className={formFieldClassName}
@@ -332,6 +318,7 @@ export function RecipeForm({
             </section>
           </div>
 
+          {/* Правая колонка нужна только для визуальной обратной связи до отправки формы. */}
           <div className="flex flex-col gap-3">
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#9b7855]">
               Предпросмотр карточки
@@ -343,6 +330,7 @@ export function RecipeForm({
           </div>
         </div>
 
+        {/* Нижняя зона собирает глобальный ответ формы и основные управляющие кнопки. */}
         <FormStatusMessage
           message={state.message}
           tone={state.status === 'success' ? 'success' : 'error'}

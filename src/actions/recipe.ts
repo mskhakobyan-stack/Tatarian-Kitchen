@@ -7,7 +7,20 @@ import { extname, join } from 'node:path';
 import { revalidatePath } from 'next/cache';
 
 import { auth } from '@/auth/auth';
-import { Prisma } from '@/generated/prisma/client';
+import {
+  getFileFormValue,
+  pickStringFormValues,
+  type StringFormFieldConfig,
+} from '@/lib/form-data';
+import { prisma } from '@/lib/prisma';
+import { RECIPE_UPLOAD_PUBLIC_PATH, isUploadedRecipeImage } from '@/lib/recipe-images';
+import {
+  allRecipeIngredientIdsExist,
+  createRecipeRecord,
+  deleteRecipeRecord,
+  updateRecipeRecord,
+} from '@/lib/recipe-records';
+import { recipeSchema } from '@/schema/zod';
 import type {
   RecipeDeleteResult,
   RecipeFieldName,
@@ -18,12 +31,12 @@ import type {
   RecipeIngredientDraft,
   RecipeIngredientInput,
   SavedRecipe,
-  SavedRecipeIngredient,
 } from '@/types/recipe-form';
-import { RECIPE_UPLOAD_PUBLIC_PATH, isUploadedRecipeImage } from '@/lib/recipe-images';
-import { prisma } from '@/lib/prisma';
-import { recipeSchema } from '@/schema/zod';
 
+/**
+ * Блок констант держим наверху, чтобы внизу action-логика читалась как сценарий,
+ * а не как смесь бизнес-правил, сообщений и технических деталей.
+ */
 const RECIPE_UPLOAD_DIRECTORY = join(
   process.cwd(),
   'public',
@@ -73,21 +86,14 @@ const ALLOWED_RECIPE_IMAGE_TYPES = new Set([
   'image/png',
   'image/webp',
 ]);
-
-interface RecipeRow {
-  description: string | null;
-  id: string;
-  image_url: string | null;
-  name: string;
-}
-
-interface RecipeIngredientRow {
-  ingredient_id: string;
-  ingredient_name: string;
-  quantity: number;
-  recipe_id: string;
-  unit: SavedRecipeIngredient['unit'];
-}
+const RECIPE_FORM_FIELDS = [
+  { key: 'currentImageUrl' },
+  { key: 'description' },
+  { key: 'ingredientsPayload' },
+  { key: 'imageSource' },
+  { key: 'imageUrl' },
+  { key: 'name' },
+] as const satisfies readonly StringFormFieldConfig<RecipeFieldName>[];
 
 interface RecipeImageResolution {
   imageUrl: string;
@@ -99,74 +105,18 @@ interface RecipeImageValidationResult {
   resolvedImage: RecipeImageResolution | null;
 }
 
-type RecipeDatabase = Pick<typeof prisma, '$executeRaw' | '$queryRaw'> & {
-  ingredient: typeof prisma.ingredient;
-};
-
-function getFormValue(formData: FormData, key: RecipeFieldName): string {
-  const value = formData.get(key);
-
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function getFileValue(formData: FormData, key: string): File | null {
-  const value = formData.get(key);
-
-  if (!value || typeof value === 'string') {
-    return null;
-  }
-
-  return typeof value.arrayBuffer === 'function' ? value : null;
-}
-
+/**
+ * Собираем `FormData` декларативно, чтобы все recipe-actions использовали
+ * одинаковые правила чтения строковых полей.
+ */
 function getRecipeFormValues(formData: FormData): RecipeFormFields {
-  return {
-    currentImageUrl: getFormValue(formData, 'currentImageUrl'),
-    description: getFormValue(formData, 'description'),
-    ingredientsPayload: getFormValue(formData, 'ingredientsPayload'),
-    imageSource: getFormValue(formData, 'imageSource'),
-    imageUrl: getFormValue(formData, 'imageUrl'),
-    name: getFormValue(formData, 'name'),
-  };
+  return pickStringFormValues(formData, RECIPE_FORM_FIELDS);
 }
 
-function mapRecipeIngredientRow(row: RecipeIngredientRow): SavedRecipeIngredient {
-  return {
-    ingredientId: row.ingredient_id,
-    ingredientName: row.ingredient_name,
-    quantity: row.quantity,
-    unit: row.unit,
-  };
-}
-
-function createRecipeIngredientMap(
-  rows: RecipeIngredientRow[],
-): Map<string, SavedRecipeIngredient[]> {
-  const ingredientMap = new Map<string, SavedRecipeIngredient[]>();
-
-  for (const row of rows) {
-    const currentIngredients = ingredientMap.get(row.recipe_id) ?? [];
-
-    currentIngredients.push(mapRecipeIngredientRow(row));
-    ingredientMap.set(row.recipe_id, currentIngredients);
-  }
-
-  return ingredientMap;
-}
-
-function mapRecipeRow(
-  row: RecipeRow,
-  ingredientMap: Map<string, SavedRecipeIngredient[]> = new Map(),
-): SavedRecipe {
-  return {
-    id: row.id,
-    name: row.name,
-    description: row.description ?? '',
-    imageUrl: row.image_url ?? '',
-    ingredients: ingredientMap.get(row.id) ?? [],
-  };
-}
-
+/**
+ * Общее error-state упрощает интеграцию с `useActionState` и гарантирует,
+ * что интерфейс всегда получит однотипный ответ.
+ */
 function createErrorState(
   message: string,
   errors: RecipeFormErrors = {},
@@ -180,6 +130,10 @@ function createErrorState(
   };
 }
 
+/**
+ * Ошибки zod и наши дополнительные recipe-check-и приводим к одному shape,
+ * чтобы UI не интересовало их происхождение.
+ */
 function createValidationErrorState(
   errors: RecipeFormErrors,
   recipe: SavedRecipe | null,
@@ -199,14 +153,25 @@ function createValidationErrorState(
   );
 }
 
+/**
+ * Повторная проверка прав внутри каждого action защищает приложение
+ * от прямых POST-запросов мимо клиентского интерфейса.
+ */
 function isAuthenticated(session: { user?: unknown } | null): boolean {
   return Boolean(session && 'user' in session && session.user);
 }
 
+/**
+ * UI передаёт source строкой, а на сервере нам удобнее работать
+ * с маленьким объединением литеральных значений.
+ */
 function getImageSource(value: string): RecipeImageSource {
   return value === 'file' ? 'file' : 'url';
 }
 
+/**
+ * Валидацию URL держим простой и явной: нам подходят только абсолютные http/https-ссылки.
+ */
 function isValidUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -217,6 +182,10 @@ function isValidUrl(value: string): boolean {
   }
 }
 
+/**
+ * При загрузке файла стараемся сохранить расширение из имени файла,
+ * а если его нет, аккуратно восстанавливаем по MIME-type.
+ */
 function getFileExtension(file: File): string {
   const originalExtension = extname(file.name).toLowerCase();
 
@@ -239,10 +208,17 @@ function getFileExtension(file: File): string {
   return '.jpg';
 }
 
+/**
+ * Количество приходит строкой из формы, но в БД и расчётах нам нужно число.
+ */
 function parseQuantity(value: string): number {
   return Number(value.trim().replace(',', '.'));
 }
 
+/**
+ * Ингредиенты отправляются как JSON-строка, поэтому сначала мягко парсим её
+ * и сразу нормализуем до контролируемого чернового вида.
+ */
 function parseRecipeIngredientsPayload(
   payload: string,
 ): RecipeIngredientDraft[] | null {
@@ -263,8 +239,10 @@ function parseRecipeIngredientsPayload(
           ? item.ingredientId.trim()
           : '',
       quantity:
-        item && (
-          typeof item.quantity === 'number' || typeof item.quantity === 'string'
+        item
+        && (
+          typeof item.quantity === 'number'
+          || typeof item.quantity === 'string'
         )
           ? String(item.quantity).trim()
           : '',
@@ -274,8 +252,11 @@ function parseRecipeIngredientsPayload(
   }
 }
 
+/**
+ * Отдельный validator закрывает сразу несколько рисков:
+ * пустые строки, дубли, неправильный формат количества и устаревшие `ingredientId`.
+ */
 async function validateRecipeIngredients(
-  database: Pick<RecipeDatabase, 'ingredient'>,
   payload: string,
 ): Promise<{
   errors: RecipeFormErrors;
@@ -350,18 +331,15 @@ async function validateRecipeIngredients(
     });
   }
 
-  const existingIngredients = await database.ingredient.findMany({
-    where: {
-      id: {
-        in: normalizedIngredients.map((ingredient) => ingredient.ingredientId),
-      },
-    },
-    select: {
-      id: true,
-    },
-  });
+  const ingredientIds = normalizedIngredients.map(
+    (ingredient) => ingredient.ingredientId,
+  );
+  const allIngredientsExist = await allRecipeIngredientIdsExist(
+    prisma,
+    ingredientIds,
+  );
 
-  if (existingIngredients.length !== normalizedIngredients.length) {
+  if (!allIngredientsExist) {
     return {
       ingredients: null,
       errors: {
@@ -376,6 +354,10 @@ async function validateRecipeIngredients(
   };
 }
 
+/**
+ * Загруженное изображение сохраняем в `public/uploads/recipes`,
+ * чтобы карточка могла сразу показывать локальный путь без отдельного media-layer.
+ */
 async function saveRecipeImage(file: File): Promise<string> {
   await mkdir(RECIPE_UPLOAD_DIRECTORY, { recursive: true });
 
@@ -388,6 +370,10 @@ async function saveRecipeImage(file: File): Promise<string> {
   return `${RECIPE_UPLOAD_PUBLIC_PATH}/${fileName}`;
 }
 
+/**
+ * Удаляем только наши локально загруженные файлы и молча игнорируем ситуацию,
+ * когда файл уже исчез вручную.
+ */
 async function deleteUploadedRecipeImage(imageUrl: string | null): Promise<void> {
   if (!isUploadedRecipeImage(imageUrl)) {
     return;
@@ -405,10 +391,14 @@ async function deleteUploadedRecipeImage(imageUrl: string | null): Promise<void>
   try {
     await unlink(join(RECIPE_UPLOAD_DIRECTORY, relativeFilePath));
   } catch {
-    // Файл мог быть уже удалён вручную — это не должно ломать CRUD.
+    // Файл могли удалить вручную вне приложения — CRUD не должен из-за этого падать.
   }
 }
 
+/**
+ * Здесь сходятся обе стратегии работы с картинкой:
+ * ссылка, новый файл или сохранение уже существующего uploaded-файла.
+ */
 async function resolveRecipeImage(
   values: RecipeFormFields,
   imageFile: File | null,
@@ -507,121 +497,10 @@ async function resolveRecipeImage(
   };
 }
 
-async function fetchRecipeIngredientRows(
-  database: Pick<RecipeDatabase, '$queryRaw'>,
-  recipeIds: string[],
-): Promise<RecipeIngredientRow[]> {
-  if (!recipeIds.length) {
-    return [];
-  }
-
-  return database.$queryRaw<RecipeIngredientRow[]>(Prisma.sql`
-    select
-      ri."recipeId" as recipe_id,
-      ri."ingredientId" as ingredient_id,
-      ri.quantity,
-      i.name as ingredient_name,
-      i.unit
-    from recipe_ingredients ri
-    inner join ingredients i on i.id = ri."ingredientId"
-    where ri."recipeId" in (${Prisma.join(recipeIds)})
-    order by ri."recipeId" asc, i.name asc
-  `);
-}
-
-async function insertRecipeRow(
-  database: Pick<RecipeDatabase, '$queryRaw'>,
-  data: Omit<SavedRecipe, 'id' | 'ingredients'>,
-): Promise<RecipeRow> {
-  const rows = await database.$queryRaw<RecipeRow[]>`
-    insert into "Recipe" (id, name, description, image_url)
-    values (${randomUUID()}, ${data.name}, ${data.description}, ${data.imageUrl})
-    returning id, name, description, image_url
-  `;
-
-  const row = rows[0];
-
-  if (!row) {
-    throw new Error('Failed to insert recipe');
-  }
-
-  return row;
-}
-
-async function insertRecipeIngredients(
-  database: Pick<RecipeDatabase, '$executeRaw'>,
-  recipeId: string,
-  ingredients: RecipeIngredientInput[],
-): Promise<void> {
-  if (!ingredients.length) {
-    return;
-  }
-
-  const values = ingredients.map((ingredient) => Prisma.sql`
-    (
-      ${randomUUID()},
-      ${recipeId},
-      ${ingredient.ingredientId},
-      ${ingredient.quantity},
-      now(),
-      now()
-    )
-  `);
-
-  await database.$executeRaw(Prisma.sql`
-    insert into recipe_ingredients (
-      id,
-      "recipeId",
-      "ingredientId",
-      quantity,
-      created_at,
-      updated_at
-    )
-    values ${Prisma.join(values)}
-  `);
-}
-
-async function persistRecipeUpdate(
-  database: Pick<RecipeDatabase, '$queryRaw'>,
-  id: string,
-  data: Omit<SavedRecipe, 'id' | 'ingredients'>,
-): Promise<RecipeRow | null> {
-  const rows = await database.$queryRaw<RecipeRow[]>`
-    update "Recipe"
-    set
-      name = ${data.name},
-      description = ${data.description},
-      image_url = ${data.imageUrl}
-    where id = ${id}
-    returning id, name, description, image_url
-  `;
-
-  return rows[0] ?? null;
-}
-
-async function deleteRecipeIngredients(
-  database: Pick<RecipeDatabase, '$executeRaw'>,
-  recipeId: string,
-): Promise<void> {
-  await database.$executeRaw`
-    delete from recipe_ingredients
-    where "recipeId" = ${recipeId}
-  `;
-}
-
-async function deleteRecipeRow(
-  database: Pick<RecipeDatabase, '$queryRaw'>,
-  id: string,
-): Promise<RecipeRow | null> {
-  const rows = await database.$queryRaw<RecipeRow[]>`
-    delete from "Recipe"
-    where id = ${id}
-    returning id, name, description, image_url
-  `;
-
-  return rows[0] ?? null;
-}
-
+/**
+ * Создание рецепта теперь оркестрирует только верхнеуровневые шаги:
+ * auth, валидацию, работу с картинкой, транзакцию и cleanup.
+ */
 export async function createRecipe(
   prevState: RecipeFormState,
   formData: FormData,
@@ -643,7 +522,6 @@ export async function createRecipe(
   }
 
   const validatedIngredients = await validateRecipeIngredients(
-    prisma,
     parsedValues.data.ingredientsPayload,
   );
 
@@ -653,37 +531,28 @@ export async function createRecipe(
       prevState.recipe,
     );
   }
-  const recipeIngredients = validatedIngredients.ingredients;
 
   const imageResult = await resolveRecipeImage(
     parsedValues.data,
-    getFileValue(formData, 'imageFile'),
+    getFileFormValue(formData, 'imageFile'),
   );
 
   if (!imageResult.resolvedImage) {
     return createValidationErrorState(imageResult.errors, prevState.recipe);
   }
-  const resolvedImage = imageResult.resolvedImage;
 
   try {
-    const recipe = await prisma.$transaction(async (transaction) => {
-      const recipeRow = await insertRecipeRow(transaction, {
+    const recipe = await prisma.$transaction((transaction) =>
+      createRecipeRecord(transaction, {
         name: parsedValues.data.name,
         description: parsedValues.data.description,
-        imageUrl: resolvedImage.imageUrl,
-      });
-
-      await insertRecipeIngredients(transaction, recipeRow.id, recipeIngredients);
-
-      const ingredientMap = createRecipeIngredientMap(
-        await fetchRecipeIngredientRows(transaction, [recipeRow.id]),
-      );
-
-      return mapRecipeRow(recipeRow, ingredientMap);
-    });
+        imageUrl: imageResult.resolvedImage!.imageUrl,
+        ingredients: validatedIngredients.ingredients!,
+      }),
+    );
 
     await deleteUploadedRecipeImage(
-      resolvedImage.oldUploadedImageToDelete,
+      imageResult.resolvedImage.oldUploadedImageToDelete,
     );
     revalidatePath('/recipes');
 
@@ -696,12 +565,16 @@ export async function createRecipe(
   } catch (error) {
     console.error('Failed to save recipe', error);
 
-    await deleteUploadedRecipeImage(resolvedImage.imageUrl);
+    await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
 
     return createErrorState(RECIPE_SAVE_ERROR_MESSAGE, {}, prevState.recipe);
   }
 }
 
+/**
+ * Обновление использует тот же pipeline, что и создание, но отдельно
+ * чистит новые загруженные файлы, если запись не удалось изменить.
+ */
 export async function updateRecipe(
   id: string,
   formData: FormData,
@@ -723,59 +596,42 @@ export async function updateRecipe(
   }
 
   const validatedIngredients = await validateRecipeIngredients(
-    prisma,
     parsedValues.data.ingredientsPayload,
   );
 
   if (!validatedIngredients.ingredients) {
     return createValidationErrorState(validatedIngredients.errors, null);
   }
-  const recipeIngredients = validatedIngredients.ingredients;
 
   const imageResult = await resolveRecipeImage(
     parsedValues.data,
-    getFileValue(formData, 'imageFile'),
+    getFileFormValue(formData, 'imageFile'),
   );
 
   if (!imageResult.resolvedImage) {
     return createValidationErrorState(imageResult.errors, null);
   }
-  const resolvedImage = imageResult.resolvedImage;
 
   try {
-    const recipe = await prisma.$transaction(async (transaction) => {
-      const updatedRecipeRow = await persistRecipeUpdate(transaction, id, {
+    const recipe = await prisma.$transaction((transaction) =>
+      updateRecipeRecord(transaction, id, {
         name: parsedValues.data.name,
         description: parsedValues.data.description,
-        imageUrl: resolvedImage.imageUrl,
-      });
-
-      if (!updatedRecipeRow) {
-        return null;
-      }
-
-      await deleteRecipeIngredients(transaction, id);
-      await insertRecipeIngredients(transaction, id, recipeIngredients);
-
-      const ingredientMap = createRecipeIngredientMap(
-        await fetchRecipeIngredientRows(transaction, [id]),
-      );
-
-      return mapRecipeRow(updatedRecipeRow, ingredientMap);
-    });
+        imageUrl: imageResult.resolvedImage!.imageUrl,
+        ingredients: validatedIngredients.ingredients!,
+      }),
+    );
 
     if (!recipe) {
-      if (
-        resolvedImage.imageUrl !== parsedValues.data.currentImageUrl
-      ) {
-        await deleteUploadedRecipeImage(resolvedImage.imageUrl);
+      if (imageResult.resolvedImage.imageUrl !== parsedValues.data.currentImageUrl) {
+        await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
       }
 
       return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
     }
 
     await deleteUploadedRecipeImage(
-      resolvedImage.oldUploadedImageToDelete,
+      imageResult.resolvedImage.oldUploadedImageToDelete,
     );
     revalidatePath('/recipes');
 
@@ -788,14 +644,18 @@ export async function updateRecipe(
   } catch (error) {
     console.error('Failed to update recipe', error);
 
-    if (resolvedImage.imageUrl !== parsedValues.data.currentImageUrl) {
-      await deleteUploadedRecipeImage(resolvedImage.imageUrl);
+    if (imageResult.resolvedImage.imageUrl !== parsedValues.data.currentImageUrl) {
+      await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
     }
 
     return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
   }
 }
 
+/**
+ * При удалении сначала удаляем состав, затем сам рецепт, а уже после коммита
+ * чистим загруженное изображение и инвалидируем страницу.
+ */
 export async function deleteRecipe(
   id: string,
 ): Promise<RecipeDeleteResult> {
@@ -810,11 +670,9 @@ export async function deleteRecipe(
   }
 
   try {
-    const deletedRecipe = await prisma.$transaction(async (transaction) => {
-      await deleteRecipeIngredients(transaction, id);
-
-      return deleteRecipeRow(transaction, id);
-    });
+    const deletedRecipe = await prisma.$transaction((transaction) =>
+      deleteRecipeRecord(transaction, id),
+    );
 
     if (!deletedRecipe) {
       return {
@@ -824,7 +682,7 @@ export async function deleteRecipe(
       };
     }
 
-    await deleteUploadedRecipeImage(deletedRecipe.image_url);
+    await deleteUploadedRecipeImage(deletedRecipe.imageUrl);
     revalidatePath('/recipes');
 
     return {

@@ -3,6 +3,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { hashPassword } from '@/auth/password';
+import {
+  pickStringFormValues,
+  type StringFormFieldConfig,
+} from '@/lib/form-data';
 import { prisma } from '@/lib/prisma';
 import { registerSchema } from '@/schema/zod';
 import type {
@@ -16,34 +20,21 @@ const DUPLICATE_EMAIL_MESSAGE = 'Пользователь с такой почт
 const REGISTRATION_SUCCESS_MESSAGE = 'Пользователь успешно зарегистрирован.';
 const UNKNOWN_REGISTRATION_ERROR_MESSAGE =
   'Не удалось сохранить пользователя. Попробуйте ещё раз.';
+const REGISTER_FORM_FIELDS = [
+  { key: 'email' },
+  { key: 'password', trim: false },
+  { key: 'confirmPassword', trim: false },
+] as const satisfies readonly StringFormFieldConfig<RegisterFieldName>[];
 
 interface CreatedUserRow {
   id: string;
 }
 
 /**
- * Безопасно читаем строковые значения из FormData и не даём `File` или `null`
- * попасть в схему валидации.
- */
-function getFormValue(formData: FormData, key: RegisterFieldName): string {
-  const value = formData.get(key);
-
-  if (typeof value !== 'string') {
-    return '';
-  }
-
-  return key === 'email' ? value.trim() : value;
-}
-
-/**
  * Собираем сырые значения формы в объект, который ожидает zod-схема.
  */
 function getRegisterFormValues(formData: FormData): RegisterFormFields {
-  return {
-    email: getFormValue(formData, 'email'),
-    password: getFormValue(formData, 'password'),
-    confirmPassword: getFormValue(formData, 'confirmPassword'),
-  };
+  return pickStringFormValues(formData, REGISTER_FORM_FIELDS);
 }
 
 /**

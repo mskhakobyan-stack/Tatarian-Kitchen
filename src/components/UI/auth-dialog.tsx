@@ -34,11 +34,11 @@ export function AuthDialog({
       <Modal.Backdrop>
         <Modal.Container placement="center" size="md">
           <Modal.Dialog className={`${formSurfaceClassName} overflow-hidden`}>
-            <Modal.Header className="items-center justify-between border-b border-[#efe2d5] bg-[#fff8f1]/70 px-6 py-4">
+            <Modal.Header className="items-center justify-between px-6 pb-2 pt-5">
               <Modal.Heading>{heading}</Modal.Heading>
               <Modal.CloseTrigger />
             </Modal.Header>
-            <Modal.Body className="bg-[#fffdfa]/56 px-6 py-5">
+            <Modal.Body className="px-6 pb-6 pt-0">
               {children}
             </Modal.Body>
           </Modal.Dialog>
