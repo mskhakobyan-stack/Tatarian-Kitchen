@@ -40,3 +40,11 @@ export const prisma = globalPrismaCache.prisma ?? createPrismaClient();
 if (process.env.NODE_ENV !== 'production') {
   globalPrismaCache.prisma = prisma;
 }
+
+/**
+ * Явно прогреваем соединение на старте контейнера, чтобы не ждать lazy-connect
+ * во время первого реального запроса.
+ */
+void prisma.$connect().catch((error: unknown) => {
+  console.error('Failed to warm Prisma connection', error);
+});
