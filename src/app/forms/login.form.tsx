@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getSession, signIn } from 'next-auth/react';
 import {
   Button,
   Description,
@@ -19,6 +18,12 @@ import {
   validateEmailValue,
   validatePasswordLengthValue,
 } from '@/auth/auth-validation';
+import {
+  finishAuthNavigation,
+  getAuthCredentialsFromForm,
+  signInWithCredentials,
+  syncAuthenticatedSession,
+} from '@/app/forms/auth-client';
 import { useAuthStore } from '@/auth/auth-store';
 import { FormStatusMessage } from '@/components/UI/form-feedback';
 import { PasswordVisibilityToggle } from '@/components/UI/password-visibility-toggle';
@@ -28,25 +33,10 @@ import {
   formFieldClassName,
   softButtonClassName,
 } from '@/components/UI/ui-theme';
+import { getSafeCallbackUrl } from '@/lib/auth-redirect';
 
 const LOGIN_ERROR_MESSAGE = 'Не удалось выполнить вход. Попробуйте ещё раз.';
 const LOGIN_SUCCESS_MESSAGE = 'Вход выполнен успешно.';
-
-/**
- * Достаём email и пароль из формы в одном месте, чтобы код обработчика
- * отправки оставался компактным и читался сверху вниз.
- */
-function getCredentialsFromForm(formElement: HTMLFormElement) {
-  const formData = new FormData(formElement);
-  const email = formData.get('email');
-  const password = formData.get('password');
-
-  if (typeof email !== 'string' || typeof password !== 'string') {
-    return null;
-  }
-
-  return { email, password };
-}
 
 /**
  * Форма входа работает целиком на клиенте:
@@ -60,17 +50,11 @@ export function LoginForm() {
   const [isPending, startTransition] = useTransition();
   const clearAuth = useAuthStore((store) => store.clearAuth);
   const syncSession = useAuthStore((store) => store.syncSession);
-  const callbackUrl = searchParams.get('callbackUrl');
-  const safeCallbackUrl =
-    callbackUrl &&
-    callbackUrl.startsWith('/') &&
-    !callbackUrl.startsWith('//')
-      ? callbackUrl
-      : null;
+  const safeCallbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const credentials = getCredentialsFromForm(event.currentTarget);
+    const credentials = getAuthCredentialsFromForm(event.currentTarget);
 
     if (!credentials) {
       setMessage('Не удалось прочитать данные формы.');
@@ -80,36 +64,27 @@ export function LoginForm() {
     startTransition(async () => {
       setMessage('');
       try {
-        const result = await signIn('credentials', {
-          email: credentials.email,
-          password: credentials.password,
-          redirect: false,
-        });
+        const isSignedIn = await signInWithCredentials(credentials);
 
-        if (!result || result.error) {
+        if (!isSignedIn) {
           clearAuth();
           setMessage('Неверная почта или пароль.');
           return;
         }
 
-        const session = await getSession();
+        const session = await syncAuthenticatedSession({
+          clearAuth,
+          syncSession,
+        });
 
-        if (!session?.user) {
-          clearAuth();
+        if (!session) {
           setMessage(LOGIN_ERROR_MESSAGE);
           return;
         }
 
         // Обновляем локальный store сразу, чтобы хедер и приветствие отреагировали без задержки.
-        syncSession(session);
         setMessage(LOGIN_SUCCESS_MESSAGE);
-
-        if (safeCallbackUrl) {
-          router.replace(safeCallbackUrl);
-          return;
-        }
-
-        router.refresh();
+        finishAuthNavigation(router, safeCallbackUrl);
       } catch (error) {
         console.error('Failed to sign in', error);
         clearAuth();

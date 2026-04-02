@@ -6,7 +6,6 @@ import {
   useEffect,
   useRef,
   useState,
-  useTransition,
   type FormEvent,
 } from 'react';
 import {
@@ -45,6 +44,7 @@ import {
   validateRecipeImageUrl,
   validateRecipeName,
 } from '@/lib/recipe-form';
+import { useItemMutationState } from '@/components/UI/use-item-mutation-state';
 import {
   createEmptyRecipeIngredientDraft,
   initialRecipeFormState,
@@ -71,6 +71,21 @@ function getRecipeDescriptionPreview(description: string): string {
   return `${description.slice(0, RECIPE_DESCRIPTION_PREVIEW_LENGTH).trimEnd()}...`;
 }
 
+function getEmptyRecipesMessage(
+  currentUserId: string | null,
+  hasAvailableIngredients: boolean,
+): string {
+  if (!currentUserId) {
+    return 'Рецептов пока нет. Войдите в аккаунт, чтобы добавить первый рецепт.';
+  }
+
+  if (!hasAvailableIngredients) {
+    return 'Рецептов пока нет. Сначала добавьте хотя бы один ингредиент, чтобы собрать первый рецепт.';
+  }
+
+  return 'Рецептов пока нет. Добавьте первую карточку через форму выше.';
+}
+
 /**
  * Сетка карточек показывает рецепты всем пользователям, а CRUD-кнопки оставляет
  * только авторизованным.
@@ -90,10 +105,14 @@ export function RecipeCards({
   const [editState, setEditState] = useState<RecipeFormState>(
     initialRecipeFormState,
   );
-  const [statusMessage, setStatusMessage] = useState('');
-  const [statusTone, setStatusTone] = useState<'error' | 'success'>('success');
-  const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const {
+    isItemPending,
+    setErrorMessage,
+    setSuccessMessage,
+    runForItem,
+    statusMessage,
+    statusTone,
+  } = useItemMutationState();
   const [editImageSource, setEditImageSource] = useState<'file' | 'url'>('url');
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editPreviewUrl, setEditPreviewUrl] = useState('');
@@ -168,21 +187,15 @@ export function RecipeCards({
       return;
     }
 
-    setPendingRecipeId(recipe.id);
-
-    startTransition(async () => {
+    runForItem(recipe.id, async () => {
       const result = await deleteRecipe(recipe.id);
 
       if (result.status === 'success' && result.deletedRecipeId) {
         onRecipeDeleted(result.deletedRecipeId);
-        setStatusTone('success');
-        setStatusMessage(`Рецепт «${recipe.name}» удалён.`);
+        setSuccessMessage(`Рецепт «${recipe.name}» удалён.`);
       } else {
-        setStatusTone('error');
-        setStatusMessage(result.message);
+        setErrorMessage(result.message);
       }
-
-      setPendingRecipeId(null);
     });
   };
 
@@ -194,21 +207,17 @@ export function RecipeCards({
     }
 
     const formData = new FormData(event.currentTarget);
-    setPendingRecipeId(editingRecipe.id);
 
-    startTransition(async () => {
+    runForItem(editingRecipe.id, async () => {
       const result = await updateRecipe(editingRecipe.id, formData);
 
       if (result.status === 'success' && result.recipe) {
         onRecipeUpdated(result.recipe);
-        setStatusTone('success');
-        setStatusMessage(`Рецепт «${result.recipe.name}» обновлён.`);
+        setSuccessMessage(`Рецепт «${result.recipe.name}» обновлён.`);
         closeEditModal();
       } else {
         setEditState(result);
       }
-
-      setPendingRecipeId(null);
     });
   };
 
@@ -263,7 +272,7 @@ export function RecipeCards({
               </div>
               <Button
                 className={softButtonClassName}
-                isDisabled={isPending && pendingRecipeId === editingRecipe.id}
+                isDisabled={isItemPending(editingRecipe.id)}
                 onPress={closeEditModal}
                 type="button"
                 variant="secondary"
@@ -476,19 +485,19 @@ export function RecipeCards({
                 <Button
                   className={filledButtonClassName}
                   isDisabled={
-                    (isPending && pendingRecipeId === editingRecipe.id)
+                    isItemPending(editingRecipe.id)
                     || !availableIngredients.length
                   }
                   type="submit"
                 >
                   <SuccessIcon />
-                  {isPending && pendingRecipeId === editingRecipe.id
+                  {isItemPending(editingRecipe.id)
                     ? 'Сохранение...'
                     : 'Сохранить'}
                 </Button>
                 <Button
                   className={softButtonClassName}
-                  isDisabled={isPending && pendingRecipeId === editingRecipe.id}
+                  isDisabled={isItemPending(editingRecipe.id)}
                   onPress={closeEditModal}
                   type="button"
                   variant="secondary"
@@ -591,7 +600,7 @@ export function RecipeCards({
                     <Card.Footer className="flex flex-wrap gap-2 border-t border-[#efe2d5] bg-[#fff8f1]/70 px-5 py-4">
                       <Button
                         className={softButtonClassName}
-                        isDisabled={isPending && pendingRecipeId === recipe.id}
+                        isDisabled={isItemPending(recipe.id)}
                         onPress={() => openEditModal(recipe)}
                         variant="secondary"
                       >
@@ -599,7 +608,7 @@ export function RecipeCards({
                       </Button>
                       <Button
                         className={destructiveButtonClassName}
-                        isDisabled={isPending && pendingRecipeId === recipe.id}
+                        isDisabled={isItemPending(recipe.id)}
                         onPress={() => handleDelete(recipe)}
                         variant="secondary"
                       >
@@ -618,7 +627,10 @@ export function RecipeCards({
         </div>
       ) : (
         <div className="rounded-[24px] border border-dashed border-[#e5d1ba] bg-[#fffdfa]/48 px-6 py-12 text-center text-sm leading-6 text-[#8b6742]">
-          Рецептов пока нет. Добавьте первую карточку через форму выше.
+          {getEmptyRecipesMessage(
+            currentUserId,
+            Boolean(availableIngredients.length),
+          )}
         </div>
       )}
     </section>

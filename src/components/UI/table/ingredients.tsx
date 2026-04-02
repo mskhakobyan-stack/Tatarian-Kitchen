@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import {
   Button,
   FieldError,
@@ -38,22 +38,18 @@ import {
   textAreaClassName,
 } from '@/components/UI/ui-theme';
 import {
-  Category,
-  Unit,
-  type Category as CategoryValue,
-  type Unit as UnitValue,
-} from '@/generated/prisma/browser';
+  CATEGORY_OPTIONS,
+  getCategoryLabel,
+  UNIT_OPTIONS,
+} from '@/lib/ingredient-form';
+import { getUnitLabel } from '@/lib/ingredient-units';
+import { useItemMutationState } from '@/components/UI/use-item-mutation-state';
 import {
   initialIngredientFormState,
   type IngredientFormFields,
   type IngredientFormState,
   type SavedIngredient,
 } from '@/types/ingredient-form';
-
-interface IngredientOption<T extends string> {
-  label: string;
-  value: T;
-}
 
 interface IngredientsTableProps {
   currentUserId: string | null;
@@ -62,49 +58,16 @@ interface IngredientsTableProps {
   onIngredientUpdated: (ingredient: SavedIngredient) => void;
 }
 
-const CATEGORY_LABELS: Record<CategoryValue, string> = {
-  [Category.VEGETABLE]: 'Овощи',
-  [Category.FRUIT]: 'Фрукты',
-  [Category.MEAT]: 'Мясо',
-  [Category.DAIRY]: 'Молочные продукты',
-  [Category.GRAIN]: 'Крупы',
-  [Category.OTHER]: 'Другое',
-};
-
-const UNIT_LABELS: Record<UnitValue, string> = {
-  [Unit.GRAM]: 'г',
-  [Unit.KILOGRAM]: 'кг',
-  [Unit.LITER]: 'л',
-  [Unit.MILLILITER]: 'мл',
-  [Unit.PIECE]: 'шт',
-};
-
-const CATEGORY_OPTIONS: IngredientOption<CategoryValue>[] = Object.values(
-  Category,
-).map((value) => ({
-  label: CATEGORY_LABELS[value],
-  value,
-}));
-
-const UNIT_OPTIONS: IngredientOption<UnitValue>[] = Object.values(Unit).map(
-  (value) => ({
-    label: UNIT_LABELS[value],
-    value,
-  }),
-);
-
 const PRICE_FORMATTER = new Intl.NumberFormat('ru-RU', {
   currency: 'RUB',
   maximumFractionDigits: 2,
   style: 'currency',
 });
 
-function getCategoryLabel(category: CategoryValue): string {
-  return CATEGORY_LABELS[category];
-}
-
-function getUnitLabel(unit: UnitValue): string {
-  return UNIT_LABELS[unit];
+function getEmptyIngredientsMessage(currentUserId: string | null): string {
+  return currentUserId
+    ? 'Таблица пока пустая. Добавьте первый ингредиент через форму выше.'
+    : 'Таблица пока пустая. Войдите в аккаунт, чтобы добавить первый ингредиент.';
 }
 
 function getEditFormValues(formData: FormData): IngredientFormFields {
@@ -139,12 +102,14 @@ export function IngredientsTable({
   const [editState, setEditState] = useState<IngredientFormState>(
     initialIngredientFormState,
   );
-  const [statusMessage, setStatusMessage] = useState('');
-  const [statusTone, setStatusTone] = useState<'error' | 'success'>('success');
-  const [pendingIngredientId, setPendingIngredientId] = useState<string | null>(
-    null,
-  );
-  const [isPending, startTransition] = useTransition();
+  const {
+    isItemPending,
+    setErrorMessage,
+    setSuccessMessage,
+    runForItem,
+    statusMessage,
+    statusTone,
+  } = useItemMutationState();
 
   const openEditModal = (ingredient: SavedIngredient) => {
     setEditingIngredient(ingredient);
@@ -163,20 +128,15 @@ export function IngredientsTable({
       return;
     }
 
-    setPendingIngredientId(ingredient.id);
-    startTransition(async () => {
+    runForItem(ingredient.id, async () => {
       const result = await deleteIngredient(ingredient.id);
 
       if (result.status === 'success' && result.deletedIngredientId) {
         onIngredientDeleted(result.deletedIngredientId);
-        setStatusTone('success');
-        setStatusMessage(`Ингредиент «${ingredient.name}» удалён.`);
+        setSuccessMessage(`Ингредиент «${ingredient.name}» удалён.`);
       } else {
-        setStatusTone('error');
-        setStatusMessage(result.message);
+        setErrorMessage(result.message);
       }
-
-      setPendingIngredientId(null);
     });
   };
 
@@ -188,21 +148,17 @@ export function IngredientsTable({
     }
 
     const fields = getEditFormValues(new FormData(event.currentTarget));
-    setPendingIngredientId(editingIngredient.id);
 
-    startTransition(async () => {
+    runForItem(editingIngredient.id, async () => {
       const result = await updateIngredient(editingIngredient.id, fields);
 
       if (result.status === 'success' && result.ingredient) {
         onIngredientUpdated(result.ingredient);
-        setStatusTone('success');
-        setStatusMessage(`Ингредиент «${result.ingredient.name}» обновлён.`);
+        setSuccessMessage(`Ингредиент «${result.ingredient.name}» обновлён.`);
         closeEditModal();
       } else {
         setEditState(result);
       }
-
-      setPendingIngredientId(null);
     });
   };
 
@@ -257,7 +213,7 @@ export function IngredientsTable({
               items={ingredients}
               renderEmptyState={() => (
                 <div className="px-4 py-10 text-center text-sm text-[#7a532a]">
-                  Таблица пока пустая. Добавьте первый ингредиент через форму выше.
+                  {getEmptyIngredientsMessage(currentUserId)}
                 </div>
               )}
             >
@@ -293,9 +249,7 @@ export function IngredientsTable({
                           <div className="flex flex-wrap gap-2">
                             <Button
                               className={softButtonClassName}
-                              isDisabled={
-                                isPending && pendingIngredientId === ingredient.id
-                              }
+                              isDisabled={isItemPending(ingredient.id)}
                               onPress={() => openEditModal(ingredient)}
                               variant="secondary"
                             >
@@ -303,9 +257,7 @@ export function IngredientsTable({
                             </Button>
                             <Button
                               className={destructiveButtonClassName}
-                              isDisabled={
-                                isPending && pendingIngredientId === ingredient.id
-                              }
+                              isDisabled={isItemPending(ingredient.id)}
                               onPress={() => handleDelete(ingredient)}
                               variant="secondary"
                             >
@@ -460,20 +412,16 @@ export function IngredientsTable({
                     <div className="flex flex-wrap gap-2">
                       <Button
                         className={filledButtonClassName}
-                        isDisabled={
-                          isPending && pendingIngredientId === editingIngredient.id
-                        }
+                        isDisabled={isItemPending(editingIngredient.id)}
                         type="submit"
                       >
-                        {isPending && pendingIngredientId === editingIngredient.id
+                        {isItemPending(editingIngredient.id)
                           ? 'Сохранение...'
                           : 'Сохранить'}
                       </Button>
                       <Button
                         className={softButtonClassName}
-                        isDisabled={
-                          isPending && pendingIngredientId === editingIngredient.id
-                        }
+                        isDisabled={isItemPending(editingIngredient.id)}
                         onPress={closeEditModal}
                         type="button"
                         variant="secondary"

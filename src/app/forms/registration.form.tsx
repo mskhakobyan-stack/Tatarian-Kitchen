@@ -9,7 +9,6 @@ import {
   useTransition,
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getSession, signIn } from 'next-auth/react';
 import {
   Button,
   Description,
@@ -26,6 +25,13 @@ import {
   validateEmailValue,
   validatePasswordValue,
 } from '@/auth/auth-validation';
+import {
+  finishAuthNavigation,
+  getAuthCredentialsFromForm,
+  signInWithCredentials,
+  syncAuthenticatedSession,
+  type AuthCredentials,
+} from '@/app/forms/auth-client';
 import { registerUser } from '@/actions/register';
 import { useAuthStore } from '@/auth/auth-store';
 import {
@@ -39,6 +45,7 @@ import {
   formFieldClassName,
   softButtonClassName,
 } from '@/components/UI/ui-theme';
+import { getSafeCallbackUrl } from '@/lib/auth-redirect';
 import { initialRegisterFormState } from '@/types/form-data';
 
 const REGISTRATION_SIGN_IN_ERROR_MESSAGE =
@@ -50,25 +57,21 @@ const REGISTRATION_SIGN_IN_SUCCESS_MESSAGE =
 
 interface SubmittedRegistrationCredentials {
   attemptId: number;
-  email: string;
-  password: string;
+  credentials: AuthCredentials;
 }
 
 function getRegistrationCredentialsFromForm(
   formElement: HTMLFormElement,
 ): SubmittedRegistrationCredentials | null {
-  const formData = new FormData(formElement);
-  const email = formData.get('email');
-  const password = formData.get('password');
+  const credentials = getAuthCredentialsFromForm(formElement);
 
-  if (typeof email !== 'string' || typeof password !== 'string') {
+  if (!credentials) {
     return null;
   }
 
   return {
     attemptId: Date.now(),
-    email,
-    password,
+    credentials,
   };
 }
 
@@ -108,13 +111,7 @@ export function RegistrationForm() {
   );
   const clearAuth = useAuthStore((store) => store.clearAuth);
   const syncSession = useAuthStore((store) => store.syncSession);
-  const callbackUrl = searchParams.get('callbackUrl');
-  const safeCallbackUrl =
-    callbackUrl &&
-    callbackUrl.startsWith('/') &&
-    !callbackUrl.startsWith('//')
-      ? callbackUrl
-      : null;
+  const safeCallbackUrl = getSafeCallbackUrl(searchParams.get('callbackUrl'));
 
   const handleAutoSignIn = useEffectEvent(
     (credentials: SubmittedRegistrationCredentials) => {
@@ -122,35 +119,26 @@ export function RegistrationForm() {
         setAuthMessage(REGISTRATION_SIGN_IN_PENDING_MESSAGE);
 
         try {
-          const result = await signIn('credentials', {
-            email: credentials.email,
-            password: credentials.password,
-            redirect: false,
+          const isSignedIn = await signInWithCredentials(credentials.credentials);
+
+          if (!isSignedIn) {
+            clearAuth();
+            setAuthMessage(REGISTRATION_SIGN_IN_ERROR_MESSAGE);
+            return;
+          }
+
+          const session = await syncAuthenticatedSession({
+            clearAuth,
+            syncSession,
           });
 
-          if (!result || result.error) {
-            clearAuth();
+          if (!session) {
             setAuthMessage(REGISTRATION_SIGN_IN_ERROR_MESSAGE);
             return;
           }
 
-          const session = await getSession();
-
-          if (!session?.user) {
-            clearAuth();
-            setAuthMessage(REGISTRATION_SIGN_IN_ERROR_MESSAGE);
-            return;
-          }
-
-          syncSession(session);
           setAuthMessage(REGISTRATION_SIGN_IN_SUCCESS_MESSAGE);
-
-          if (safeCallbackUrl) {
-            router.replace(safeCallbackUrl);
-            return;
-          }
-
-          router.refresh();
+          finishAuthNavigation(router, safeCallbackUrl);
         } catch (error) {
           console.error('Failed to sign in after registration', error);
           clearAuth();

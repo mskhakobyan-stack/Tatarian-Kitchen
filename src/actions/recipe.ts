@@ -6,7 +6,10 @@ import { extname, join } from 'node:path';
 
 import { revalidatePath } from 'next/cache';
 
-import { auth } from '@/auth/auth';
+import {
+  getAuthenticatedUserId,
+  getOwnedRecordAccess,
+} from '@/actions/action-helpers';
 import {
   getFileFormValue,
   pickStringFormValues,
@@ -100,6 +103,13 @@ const RECIPE_FORM_FIELDS = [
   { key: 'imageUrl' },
   { key: 'name' },
 ] as const satisfies readonly StringFormFieldConfig<RecipeFieldName>[];
+const RECIPE_OWNER_SELECT = {
+  ownerId: true,
+} as const;
+const RECIPE_EDIT_CONTEXT_SELECT = {
+  imageUrl: true,
+  ownerId: true,
+} as const;
 
 interface RecipeImageResolution {
   imageUrl: string;
@@ -157,16 +167,6 @@ function createValidationErrorState(
     },
     recipe,
   );
-}
-
-/**
- * Повторная проверка прав внутри каждого action защищает приложение
- * от прямых POST-запросов мимо клиентского интерфейса.
- */
-function getAuthenticatedUserId(
-  session: { user?: { id?: string | null } | null } | null,
-): string | null {
-  return typeof session?.user?.id === 'string' ? session.user.id : null;
 }
 
 /**
@@ -514,6 +514,20 @@ async function resolveRecipeImage(
   };
 }
 
+async function findRecipeForUpdate(id: string) {
+  return prisma.recipe.findUnique({
+    where: { id },
+    select: RECIPE_EDIT_CONTEXT_SELECT,
+  });
+}
+
+async function findRecipeOwnership(id: string) {
+  return prisma.recipe.findUnique({
+    where: { id },
+    select: RECIPE_OWNER_SELECT,
+  });
+}
+
 /**
  * Создание рецепта теперь оркестрирует только верхнеуровневые шаги:
  * auth, валидацию, работу с картинкой, транзакцию и cleanup.
@@ -522,8 +536,7 @@ export async function createRecipe(
   prevState: RecipeFormState,
   formData: FormData,
 ): Promise<RecipeFormState> {
-  const session = await auth();
-  const userId = getAuthenticatedUserId(session);
+  const userId = await getAuthenticatedUserId();
 
   if (!userId) {
     return createErrorState(RECIPE_UNAUTHORIZED_MESSAGE, {}, prevState.recipe);
@@ -549,6 +562,7 @@ export async function createRecipe(
       prevState.recipe,
     );
   }
+  const ingredients = validatedIngredients.ingredients;
 
   const imageResult = await resolveRecipeImage(
     parsedValues.data,
@@ -558,21 +572,20 @@ export async function createRecipe(
   if (!imageResult.resolvedImage) {
     return createValidationErrorState(imageResult.errors, prevState.recipe);
   }
+  const resolvedImage = imageResult.resolvedImage;
 
   try {
     const recipe = await prisma.$transaction((transaction) =>
       createRecipeRecord(transaction, {
         name: parsedValues.data.name,
         description: parsedValues.data.description,
-        imageUrl: imageResult.resolvedImage!.imageUrl,
-        ingredients: validatedIngredients.ingredients!,
+        imageUrl: resolvedImage.imageUrl,
+        ingredients,
         ownerId: userId,
       }),
     );
 
-    await deleteUploadedRecipeImage(
-      imageResult.resolvedImage.oldUploadedImageToDelete,
-    );
+    await deleteUploadedRecipeImage(resolvedImage.oldUploadedImageToDelete);
     revalidatePath('/recipes');
 
     return {
@@ -584,7 +597,7 @@ export async function createRecipe(
   } catch (error) {
     console.error('Failed to save recipe', error);
 
-    await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
+    await deleteUploadedRecipeImage(resolvedImage.imageUrl);
 
     return createErrorState(RECIPE_SAVE_ERROR_MESSAGE, {}, prevState.recipe);
   }
@@ -598,8 +611,7 @@ export async function updateRecipe(
   id: string,
   formData: FormData,
 ): Promise<RecipeFormState> {
-  const session = await auth();
-  const userId = getAuthenticatedUserId(session);
+  const userId = await getAuthenticatedUserId();
 
   if (!userId) {
     return createErrorState(RECIPE_UNAUTHORIZED_MESSAGE);
@@ -622,22 +634,18 @@ export async function updateRecipe(
   if (!validatedIngredients.ingredients) {
     return createValidationErrorState(validatedIngredients.errors, null);
   }
+  const ingredients = validatedIngredients.ingredients;
 
-  const currentRecipe = await prisma.recipe.findUnique({
-    where: { id },
-    select: {
-      imageUrl: true,
-      ownerId: true,
-    },
-  });
+  const recipeAccess = getOwnedRecordAccess(await findRecipeForUpdate(id), userId);
 
-  if (!currentRecipe) {
+  if (recipeAccess.status === 'not-found') {
     return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
   }
 
-  if (currentRecipe.ownerId !== userId) {
+  if (recipeAccess.status === 'forbidden') {
     return createErrorState(RECIPE_FORBIDDEN_MESSAGE);
   }
+  const currentRecipe = recipeAccess.record;
 
   const currentImageUrl = currentRecipe.imageUrl ?? '';
   const imageResult = await resolveRecipeImage(
@@ -651,28 +659,27 @@ export async function updateRecipe(
   if (!imageResult.resolvedImage) {
     return createValidationErrorState(imageResult.errors, null);
   }
+  const resolvedImage = imageResult.resolvedImage;
 
   try {
     const recipe = await prisma.$transaction((transaction) =>
       updateRecipeRecord(transaction, id, {
         name: parsedValues.data.name,
         description: parsedValues.data.description,
-        imageUrl: imageResult.resolvedImage!.imageUrl,
-        ingredients: validatedIngredients.ingredients!,
+        imageUrl: resolvedImage.imageUrl,
+        ingredients,
       }),
     );
 
     if (!recipe) {
-      if (imageResult.resolvedImage.imageUrl !== currentImageUrl) {
-        await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
+      if (resolvedImage.imageUrl !== currentImageUrl) {
+        await deleteUploadedRecipeImage(resolvedImage.imageUrl);
       }
 
       return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
     }
 
-    await deleteUploadedRecipeImage(
-      imageResult.resolvedImage.oldUploadedImageToDelete,
-    );
+    await deleteUploadedRecipeImage(resolvedImage.oldUploadedImageToDelete);
     revalidatePath('/recipes');
 
     return {
@@ -684,8 +691,8 @@ export async function updateRecipe(
   } catch (error) {
     console.error('Failed to update recipe', error);
 
-    if (imageResult.resolvedImage.imageUrl !== currentImageUrl) {
-      await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
+    if (resolvedImage.imageUrl !== currentImageUrl) {
+      await deleteUploadedRecipeImage(resolvedImage.imageUrl);
     }
 
     return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
@@ -699,8 +706,7 @@ export async function updateRecipe(
 export async function deleteRecipe(
   id: string,
 ): Promise<RecipeDeleteResult> {
-  const session = await auth();
-  const userId = getAuthenticatedUserId(session);
+  const userId = await getAuthenticatedUserId();
 
   if (!userId) {
     return {
@@ -710,14 +716,12 @@ export async function deleteRecipe(
     };
   }
 
-  const existingRecipe = await prisma.recipe.findUnique({
-    where: { id },
-    select: {
-      ownerId: true,
-    },
-  });
+  const recipeAccess = getOwnedRecordAccess(
+    await findRecipeOwnership(id),
+    userId,
+  );
 
-  if (!existingRecipe) {
+  if (recipeAccess.status === 'not-found') {
     return {
       status: 'error',
       message: RECIPE_DELETE_ERROR_MESSAGE,
@@ -725,7 +729,7 @@ export async function deleteRecipe(
     };
   }
 
-  if (existingRecipe.ownerId !== userId) {
+  if (recipeAccess.status === 'forbidden') {
     return {
       status: 'error',
       message: RECIPE_FORBIDDEN_MESSAGE,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState } from 'react';
 import {
   Button,
   FieldError,
@@ -25,94 +25,18 @@ import {
   selectTriggerClassName,
   textAreaClassName,
 } from '@/components/UI/ui-theme';
+import { useReportedFormSuccess } from '@/app/forms/use-reported-form-success';
 import {
-  Category,
-  Unit,
-  type Category as CategoryValue,
-  type Unit as UnitValue,
-} from '@/generated/prisma/browser';
+  CATEGORY_OPTIONS,
+  UNIT_OPTIONS,
+  validateIngredientDescription,
+  validateIngredientName,
+  validateIngredientPrice,
+} from '@/lib/ingredient-form';
 import {
   initialIngredientFormState,
   type SavedIngredient,
 } from '@/types/ingredient-form';
-
-interface IngredientOption<T extends string> {
-  label: string;
-  value: T;
-}
-
-/**
- * Справочники и select-опции держим рядом с формой, потому что они относятся
- * только к интерфейсу выбора и не участвуют в server-side бизнес-логике.
- */
-const CATEGORY_LABELS: Record<CategoryValue, string> = {
-  [Category.VEGETABLE]: 'Овощи',
-  [Category.FRUIT]: 'Фрукты',
-  [Category.MEAT]: 'Мясо',
-  [Category.DAIRY]: 'Молочные продукты',
-  [Category.GRAIN]: 'Крупы',
-  [Category.OTHER]: 'Другое',
-};
-
-const UNIT_LABELS: Record<UnitValue, string> = {
-  [Unit.GRAM]: 'г',
-  [Unit.KILOGRAM]: 'кг',
-  [Unit.LITER]: 'л',
-  [Unit.MILLILITER]: 'мл',
-  [Unit.PIECE]: 'шт',
-};
-
-const CATEGORY_OPTIONS: IngredientOption<CategoryValue>[] = Object.values(
-  Category,
-).map((value) => ({
-  label: CATEGORY_LABELS[value],
-  value,
-}));
-
-const UNIT_OPTIONS: IngredientOption<UnitValue>[] = Object.values(Unit).map(
-  (value) => ({
-    label: UNIT_LABELS[value],
-    value,
-  }),
-);
-
-function validateRequiredValue(value: string): string | null {
-  if (!value.trim()) {
-    return 'Поле обязательно для заполнения';
-  }
-
-  return null;
-}
-
-function validatePriceValue(value: string): string | null {
-  if (!value.trim()) {
-    return 'Укажите цену ингредиента';
-  }
-
-  const price = Number(value.trim().replace(',', '.'));
-
-  if (Number.isNaN(price)) {
-    return 'Введите число';
-  }
-
-  if (price < 0) {
-    return 'Цена не может быть отрицательной';
-  }
-
-  return null;
-}
-
-function validateDescriptionValue(value: string): string | null {
-  if (!value.trim()) {
-    return 'Добавьте короткое описание ингредиента';
-  }
-
-  if (value.trim().length < 10) {
-    return 'Описание должно содержать минимум 10 символов';
-  }
-
-  return null;
-}
 
 /**
  * Клиентская форма запускает серверный action и сообщает родителю о новой
@@ -123,32 +47,20 @@ interface IngredientFormProps {
 }
 
 export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
-  /**
-   * Форме нужен только server-action state и ref с последним отправленным id,
-   * чтобы родитель не получил повторный сигнал об одной и той же записи.
-   */
   const [state, formAction, pending] = useActionState(
     createIngredient,
     initialIngredientFormState,
   );
-  const lastReportedIngredientIdRef = useRef<string | null>(null);
 
   /**
    * После успешного сохранения синхронизируем локальный список родителя
    * без полной перезагрузки страницы.
    */
-  useEffect(() => {
-    if (state.status !== 'success' || !state.ingredient) {
-      return;
-    }
-
-    if (lastReportedIngredientIdRef.current === state.ingredient.id) {
-      return;
-    }
-
-    lastReportedIngredientIdRef.current = state.ingredient.id;
-    onIngredientCreated?.(state.ingredient);
-  }, [onIngredientCreated, state.ingredient, state.status]);
+  useReportedFormSuccess(
+    state.status,
+    state.ingredient,
+    onIngredientCreated,
+  );
 
   return (
     <div className="mt-4 flex w-full flex-col gap-4">
@@ -162,7 +74,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           aria-label="Название ингредиента"
           isRequired
           name="name"
-          validate={validateRequiredValue}
+          validate={validateIngredientName}
         >
           <Input
             className={formFieldClassName}
@@ -235,7 +147,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
             isRequired
             name="price"
             type="number"
-            validate={validatePriceValue}
+            validate={validateIngredientPrice}
           >
             <Input
               className={formFieldClassName}
@@ -254,7 +166,7 @@ export function IngredientForm({ onIngredientCreated }: IngredientFormProps) {
           aria-label="Описание ингредиента"
           isRequired
           name="description"
-          validate={validateDescriptionValue}
+          validate={validateIngredientDescription}
         >
           <TextArea
             className={`${textAreaClassName} resize-none overflow-hidden`}

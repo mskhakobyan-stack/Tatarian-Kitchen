@@ -4,7 +4,6 @@ import {
   useActionState,
   useDeferredValue,
   useEffect,
-  useEffectEvent,
   useRef,
   useState,
 } from 'react';
@@ -20,6 +19,7 @@ import {
 } from '@heroui/react';
 
 import { createRecipe } from '@/actions/recipe';
+import { useReportedFormSuccess } from '@/app/forms/use-reported-form-success';
 import {
   FieldServerError,
   FormStatusMessage,
@@ -78,7 +78,6 @@ export function RecipeForm({
   const [ingredientRows, setIngredientRows] = useState([
     createEmptyRecipeIngredientDraft(),
   ]);
-  const lastReportedRecipeIdRef = useRef<string | null>(null);
   const filePreviewObjectUrlRef = useRef<string | null>(null);
   const deferredImageUrlValue = useDeferredValue(imageUrlValue);
   const previewUrl =
@@ -105,27 +104,16 @@ export function RecipeForm({
     setIngredientRows([createEmptyRecipeIngredientDraft()]);
   };
 
-  const handleRecipeSaved = useEffectEvent((recipe: SavedRecipe) => {
+  const handleRecipeSaved = (recipe: SavedRecipe) => {
     onRecipeCreated?.(recipe);
     resetFormState();
-  });
+  };
 
   /**
    * После успешного ответа сообщаем родителю о новом рецепте только один раз,
    * даже если React повторно проигрывает эффекты в dev-режиме.
    */
-  useEffect(() => {
-    if (state.status !== 'success' || !state.recipe) {
-      return;
-    }
-
-    if (lastReportedRecipeIdRef.current === state.recipe.id) {
-      return;
-    }
-
-    lastReportedRecipeIdRef.current = state.recipe.id;
-    handleRecipeSaved(state.recipe);
-  }, [state.recipe, state.status]);
+  useReportedFormSuccess(state.status, state.recipe, handleRecipeSaved);
 
   /**
    * Финальная зачистка object URL нужна на случай ухода со страницы

@@ -16,9 +16,24 @@ import {
   softButtonClassName,
 } from '@/components/UI/ui-theme';
 import { navigationItems, siteMetadata } from '@/content/site-content';
+import type { NavigationItem } from '@/content/site-content';
 
 const navLinkBaseClassName =
   'rounded-full border px-4 py-2 text-sm font-semibold tracking-[0.02em] transition-all duration-200';
+const authDialogItems = [
+  {
+    buttonLabel: 'Вход',
+    buttonVariant: 'secondary' as const,
+    heading: 'Вход',
+    renderContent: () => <LoginForm />,
+  },
+  {
+    buttonLabel: 'Регистрация',
+    buttonVariant: 'primary' as const,
+    heading: 'Регистрация',
+    renderContent: () => <RegistrationForm />,
+  },
+] as const;
 
 /**
  * Небольшой helper держит логику активной/неактивной ссылки отдельно от JSX.
@@ -47,6 +62,87 @@ export const SiteLogo = () => {
     />
   );
 };
+
+interface HeaderNavigationLinksProps {
+  items: readonly NavigationItem[];
+  mobile?: boolean;
+  pathname: string;
+  onNavigate?: () => void;
+}
+
+function HeaderNavigationLinks({
+  items,
+  mobile = false,
+  onNavigate,
+  pathname,
+}: HeaderNavigationLinksProps) {
+  return items.map(({ href, label }) => {
+    const isActive = pathname === href;
+
+    return (
+      <Link
+        key={href}
+        aria-current={isActive ? 'page' : undefined}
+        className={
+          mobile
+            ? `${getNavLinkClassName(isActive)} block text-center`
+            : getNavLinkClassName(isActive)
+        }
+        href={href}
+        onClick={onNavigate}
+      >
+        {label}
+      </Link>
+    );
+  });
+}
+
+function SignOutButton({
+  fullWidth = false,
+  isSigningOut,
+  onSignOut,
+}: {
+  fullWidth?: boolean;
+  isSigningOut: boolean;
+  onSignOut: () => void;
+}) {
+  return (
+    <Button
+      className={fullWidth ? `${softButtonClassName} w-full justify-center` : softButtonClassName}
+      isDisabled={isSigningOut}
+      onPress={onSignOut}
+      variant="secondary"
+    >
+      {isSigningOut ? 'Выход...' : 'Выход'}
+    </Button>
+  );
+}
+
+function HeaderAuthDialogs({ mobile = false }: { mobile?: boolean }) {
+  return (
+    <div className={mobile ? 'grid gap-2' : 'hidden items-center gap-3 sm:flex'}>
+      {authDialogItems.map((dialogItem) => (
+        <AuthDialog
+          key={dialogItem.heading}
+          buttonClassName={
+            dialogItem.buttonVariant === 'primary'
+              ? mobile
+                ? `${filledButtonClassName} w-full justify-center`
+                : filledButtonClassName
+              : mobile
+                ? `${softButtonClassName} w-full justify-center`
+                : softButtonClassName
+          }
+          buttonLabel={dialogItem.buttonLabel}
+          buttonVariant={dialogItem.buttonVariant}
+          heading={dialogItem.heading}
+        >
+          {dialogItem.renderContent()}
+        </AuthDialog>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Хедер показывает навигацию и текущий auth-state пользователя.
@@ -112,20 +208,10 @@ export default function HeaderBar() {
             className="hidden min-w-0 flex-1 items-center justify-center gap-3 sm:flex"
             orientation="horizontal"
           >
-            {visibleNavigationItems.map(({ href, label }) => {
-              const isActive = pathname === href;
-
-              return (
-                <Link
-                  key={href}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={getNavLinkClassName(isActive)}
-                  href={href}
-                >
-                  {label}
-                </Link>
-              );
-            })}
+            <HeaderNavigationLinks
+              items={visibleNavigationItems}
+              pathname={pathname}
+            />
           </Toolbar>
 
           {isAuthenticated ? (
@@ -134,38 +220,17 @@ export default function HeaderBar() {
                 <p className="min-w-0 truncate text-sm font-medium tracking-[0.01em] text-[#7a5634]">
                   Здравствуйте, {userEmail}!
                 </p>
-                <Button
-                  className={softButtonClassName}
-                  isDisabled={isSigningOut}
-                  onPress={handleSignOut}
-                  variant="secondary"
-                >
-                  {isSigningOut ? 'Выход...' : 'Выход'}
-                </Button>
+                <SignOutButton
+                  isSigningOut={isSigningOut}
+                  onSignOut={handleSignOut}
+                />
               </div>
               {signOutError ? (
                 <p className="text-right text-sm text-danger">{signOutError}</p>
               ) : null}
             </div>
           ) : (
-            <div className="hidden items-center gap-3 sm:flex">
-              <AuthDialog
-                buttonClassName={softButtonClassName}
-                buttonLabel="Вход"
-                buttonVariant="secondary"
-                heading="Вход"
-              >
-                <LoginForm />
-              </AuthDialog>
-              <AuthDialog
-                buttonClassName={filledButtonClassName}
-                buttonLabel="Регистрация"
-                buttonVariant="primary"
-                heading="Регистрация"
-              >
-                <RegistrationForm />
-              </AuthDialog>
-            </div>
+            <HeaderAuthDialogs />
           )}
         </div>
 
@@ -175,21 +240,12 @@ export default function HeaderBar() {
             id="mobile-header-menu"
           >
             <nav className="flex flex-col gap-2">
-              {visibleNavigationItems.map(({ href, label }) => {
-                const isActive = pathname === href;
-
-                return (
-                <Link
-                  key={href}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`${getNavLinkClassName(isActive)} block text-center`}
-                  href={href}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  {label}
-                </Link>
-                );
-              })}
+              <HeaderNavigationLinks
+                items={visibleNavigationItems}
+                mobile
+                onNavigate={() => setIsMobileMenuOpen(false)}
+                pathname={pathname}
+              />
             </nav>
 
             {isAuthenticated ? (
@@ -200,37 +256,17 @@ export default function HeaderBar() {
                   <span className="break-all font-semibold">{userEmail}</span>
                   !
                 </p>
-                <Button
-                  className={`${softButtonClassName} w-full justify-center`}
-                  isDisabled={isSigningOut}
-                  onPress={handleSignOut}
-                  variant="secondary"
-                >
-                  {isSigningOut ? 'Выход...' : 'Выход'}
-                </Button>
+                <SignOutButton
+                  fullWidth
+                  isSigningOut={isSigningOut}
+                  onSignOut={handleSignOut}
+                />
                 {signOutError ? (
                   <p className="text-sm text-danger">{signOutError}</p>
                 ) : null}
               </div>
             ) : (
-              <div className="grid gap-2">
-                <AuthDialog
-                  buttonClassName={`${softButtonClassName} w-full justify-center`}
-                  buttonLabel="Вход"
-                  buttonVariant="secondary"
-                  heading="Вход"
-                >
-                  <LoginForm />
-                </AuthDialog>
-                <AuthDialog
-                  buttonClassName={`${filledButtonClassName} w-full justify-center`}
-                  buttonLabel="Регистрация"
-                  buttonVariant="primary"
-                  heading="Регистрация"
-                >
-                  <RegistrationForm />
-                </AuthDialog>
-              </div>
+              <HeaderAuthDialogs mobile />
             )}
           </div>
         ) : null}

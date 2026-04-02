@@ -4,16 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@heroui/react';
 
 import { RecipeForm } from '@/app/forms/recipe.form';
+import { useManagedCollection } from '@/app/forms/use-managed-collection';
 import {
   filledButtonClassName,
   softButtonClassName,
 } from '@/components/UI/ui-theme';
 import { RecipeCards } from '@/components/UI/cards/recipes';
-import {
-  prependOrReplaceById,
-  removeById,
-  replaceById,
-} from '@/lib/collection-state';
 import type {
   RecipeIngredientOption,
   SavedRecipe,
@@ -34,11 +30,12 @@ export function RecipesManager({
   currentUserId,
   initialRecipes,
 }: RecipesManagerProps) {
-  /**
-   * Менеджер хранит только высокоуровневое состояние экрана:
-   * список рецептов и открыт ли блок создания новой карточки.
-   */
-  const [recipes, setRecipes] = useState(initialRecipes);
+  const {
+    items: recipes,
+    addOrReplaceItem,
+    removeItem,
+    updateItem,
+  } = useManagedCollection(initialRecipes);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(
     initialRecipes.length === 0,
   );
@@ -62,16 +59,8 @@ export function RecipesManager({
   }, [recipes.length, shouldShowCreateForm]);
 
   const handleRecipeCreated = (recipe: SavedRecipe) => {
-    setRecipes((current) => prependOrReplaceById(current, recipe));
+    addOrReplaceItem(recipe);
     setIsCreateFormOpen(false);
-  };
-
-  const handleRecipeUpdated = (recipe: SavedRecipe) => {
-    setRecipes((current) => replaceById(current, recipe));
-  };
-
-  const handleRecipeDeleted = (recipeId: string) => {
-    setRecipes((current) => removeById(current, recipeId));
   };
 
   return (
@@ -113,8 +102,8 @@ export function RecipesManager({
       <RecipeCards
         availableIngredients={availableIngredients}
         currentUserId={currentUserId}
-        onRecipeDeleted={handleRecipeDeleted}
-        onRecipeUpdated={handleRecipeUpdated}
+        onRecipeDeleted={removeItem}
+        onRecipeUpdated={updateItem}
         recipes={recipes}
       />
     </div>

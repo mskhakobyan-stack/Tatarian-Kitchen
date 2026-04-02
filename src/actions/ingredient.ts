@@ -2,7 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { auth } from '@/auth/auth';
+import {
+  getAuthenticatedUserId,
+  getOwnedRecordAccess,
+} from '@/actions/action-helpers';
 import { Prisma } from '@/generated/prisma/client';
 import {
   normalizeStringFields,
@@ -44,6 +47,18 @@ const INGREDIENT_FORM_FIELDS = [
   { key: 'price' },
   { key: 'unit' },
 ] as const satisfies readonly StringFormFieldConfig<IngredientFieldName>[];
+const INGREDIENT_DETAILS_SELECT = {
+  id: true,
+  category: true,
+  description: true,
+  name: true,
+  ownerId: true,
+  price: true,
+  unit: true,
+} as const;
+const INGREDIENT_OWNER_SELECT = {
+  ownerId: true,
+} as const;
 
 interface IngredientRow {
   id: string;
@@ -122,16 +137,6 @@ function isForeignKeyConstraintError(
 }
 
 /**
- * Проверяем сессию внутри каждого server action: одной защиты страницы
- * недостаточно, потому что action можно вызвать и напрямую.
- */
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const session = await auth();
-
-  return typeof session?.user?.id === 'string' ? session.user.id : null;
-}
-
-/**
  * Сохраняем ингредиент через Prisma и сразу возвращаем минимальный набор полей
  * для подтверждения успешной записи в интерфейсе.
  */
@@ -148,15 +153,7 @@ async function insertIngredient(
         },
       },
     },
-    select: {
-      id: true,
-      category: true,
-      description: true,
-      name: true,
-      ownerId: true,
-      price: true,
-      unit: true,
-    },
+    select: INGREDIENT_DETAILS_SELECT,
   });
 
   return mapIngredientRow(ingredient);
@@ -172,18 +169,17 @@ async function persistIngredientUpdate(
   const ingredient = await prisma.ingredient.update({
     where: { id },
     data,
-    select: {
-      id: true,
-      category: true,
-      description: true,
-      name: true,
-      ownerId: true,
-      price: true,
-      unit: true,
-    },
+    select: INGREDIENT_DETAILS_SELECT,
   });
 
   return mapIngredientRow(ingredient);
+}
+
+async function findIngredientOwnership(id: string) {
+  return prisma.ingredient.findUnique({
+    where: { id },
+    select: INGREDIENT_OWNER_SELECT,
+  });
 }
 
 /**
@@ -258,18 +254,16 @@ export async function updateIngredient(
     return createValidationErrorState(result.error.flatten().fieldErrors, null);
   }
 
-  const existingIngredient = await prisma.ingredient.findUnique({
-    where: { id },
-    select: {
-      ownerId: true,
-    },
-  });
+  const ingredientAccess = getOwnedRecordAccess(
+    await findIngredientOwnership(id),
+    userId,
+  );
 
-  if (!existingIngredient) {
+  if (ingredientAccess.status === 'not-found') {
     return createErrorState(INGREDIENT_UPDATE_ERROR_MESSAGE);
   }
 
-  if (existingIngredient.ownerId !== userId) {
+  if (ingredientAccess.status === 'forbidden') {
     return createErrorState(INGREDIENT_FORBIDDEN_MESSAGE);
   }
 
@@ -306,14 +300,12 @@ export async function deleteIngredient(
     };
   }
 
-  const existingIngredient = await prisma.ingredient.findUnique({
-    where: { id },
-    select: {
-      ownerId: true,
-    },
-  });
+  const ingredientAccess = getOwnedRecordAccess(
+    await findIngredientOwnership(id),
+    userId,
+  );
 
-  if (!existingIngredient) {
+  if (ingredientAccess.status === 'not-found') {
     return {
       status: 'error',
       message: INGREDIENT_DELETE_ERROR_MESSAGE,
@@ -321,7 +313,7 @@ export async function deleteIngredient(
     };
   }
 
-  if (existingIngredient.ownerId !== userId) {
+  if (ingredientAccess.status === 'forbidden') {
     return {
       status: 'error',
       message: INGREDIENT_FORBIDDEN_MESSAGE,

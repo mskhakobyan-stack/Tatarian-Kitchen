@@ -10,6 +10,11 @@ export const siteMetadata = {
   name: 'Татарская кухня',
 } as const;
 
+export interface NavigationItem {
+  href: string;
+  label: string;
+}
+
 /**
  * Навигацию тоже храним отдельно от UI-компонента, чтобы хедер отвечал
  * только за отображение, а не за владение данными о маршрутах.
@@ -18,7 +23,7 @@ export const navigationItems = [
   { href: '/recipes', label: 'Рецепты' },
   { href: '/ingredients', label: 'Ингредиенты' },
   { href: '/about', label: 'О нас' },
-] as const;
+] as const satisfies readonly NavigationItem[];
 
 /**
  * Баннер на странице about рассказывает, о чём сайт, ещё до чтения основного
@@ -48,7 +53,7 @@ export const staticPageContent = {
   },
   login: {
     description:
-      'Здесь позже можно разместить отдельную страницу входа, если авторизацию понадобится вынести из модального окна.',
+      'На этой странице можно войти в аккаунт и вернуться туда, откуда был запрошен вход.',
     title: 'Вход',
   },
   recipes: {
