@@ -58,7 +58,7 @@ type RecipePersistenceInput = {
 };
 
 type RecipeDatabase = Pick<
-  Prisma.TransactionClient,
+  typeof prisma,
   'ingredient' | 'recipe' | 'recipeIngredient'
 >;
 
@@ -132,7 +132,7 @@ export async function listRecipesForDisplay(
       name: 'asc',
     },
     select: recipeDetailsSelect,
-  });
+  }) as RecipeRecord[];
 
   return recipes.map(mapRecipeRecord);
 }

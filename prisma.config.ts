@@ -9,8 +9,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // Для деплоя и миграций можем использовать прямое подключение к Postgres,
-    // а для локальной разработки оставляем безопасный fallback на DATABASE_URL.
-    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
+    // В Prisma ORM v7 для Prisma Postgres и Accelerate достаточно одного DATABASE_URL:
+    // этот же URL Prisma CLI использует для migrate/status/generate.
+    url: process.env["DATABASE_URL"],
   },
 });

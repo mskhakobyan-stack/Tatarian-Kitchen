@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { PrismaPg } from '@prisma/adapter-pg';
+import { withAccelerate } from '@prisma/extension-accelerate';
 
 import { PrismaClient } from '@/generated/prisma/client';
 
@@ -8,14 +8,17 @@ import { PrismaClient } from '@/generated/prisma/client';
  * Кэшируем Prisma Client в глобальной области только для dev-режима,
  * чтобы HMR не создавал новые подключения при каждом обновлении модулей.
  */
+type ExtendedPrismaClient = ReturnType<typeof createPrismaClient>;
+
 const globalPrismaCache = globalThis as typeof globalThis & {
-  prisma?: PrismaClient;
+  prisma?: ExtendedPrismaClient;
 };
 
 /**
- * Отдельный helper даёт более ясную ошибку, если переменная окружения не задана.
+ * Для runtime через Accelerate нужен `prisma+postgres` URL, который Prisma Client
+ * будет использовать вместо прямого TCP-подключения к базе.
  */
-function getDatabaseUrl(): string {
+function getAccelerateUrl(): string {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
@@ -26,12 +29,13 @@ function getDatabaseUrl(): string {
 }
 
 /**
- * Создаём Prisma Client поверх pg-адаптера, который работает с connection string.
+ * Создаём Prisma Client в режиме Accelerate и сразу подключаем extension,
+ * чтобы были доступны cacheStrategy и invalidate-операции.
  */
 function createPrismaClient() {
-  const adapter = new PrismaPg(getDatabaseUrl());
-
-  return new PrismaClient({ adapter });
+  return new PrismaClient({
+    accelerateUrl: getAccelerateUrl(),
+  }).$extends(withAccelerate());
 }
 
 // В production создаём клиента один раз на процесс, в development — переиспользуем.
