@@ -1,4 +1,4 @@
-import { isUploadedRecipeImage } from '@/lib/recipe-images';
+import { isRecipeFileSourceImage } from '@/lib/recipe-images';
 import {
   createEmptyRecipeIngredientDraft,
   type RecipeImageSource,
@@ -62,7 +62,7 @@ export function validateRecipeImageUrl(value: string): string | null {
  * сразу показывает поле URL.
  */
 export function getRecipeImageSource(recipe: SavedRecipe): RecipeImageSource {
-  return isUploadedRecipeImage(recipe.imageUrl) ? 'file' : 'url';
+  return isRecipeFileSourceImage(recipe.imageUrl) ? 'file' : 'url';
 }
 
 /**

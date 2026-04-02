@@ -13,7 +13,11 @@ import {
   type StringFormFieldConfig,
 } from '@/lib/form-data';
 import { prisma } from '@/lib/prisma';
-import { RECIPE_UPLOAD_PUBLIC_PATH, isUploadedRecipeImage } from '@/lib/recipe-images';
+import {
+  RECIPE_UPLOAD_PUBLIC_PATH,
+  isRecipeFileSourceImage,
+  isUploadedRecipeImage,
+} from '@/lib/recipe-images';
 import {
   allRecipeIngredientIdsExist,
   createRecipeRecord,
@@ -356,18 +360,27 @@ async function validateRecipeIngredients(
 
 /**
  * Загруженное изображение сохраняем в `public/uploads/recipes`,
- * чтобы карточка могла сразу показывать локальный путь без отдельного media-layer.
+ * а на read-only деплоях мягко переключаемся на inline data URL,
+ * чтобы upload не ломал страницу целиком.
  */
 async function saveRecipeImage(file: File): Promise<string> {
-  await mkdir(RECIPE_UPLOAD_DIRECTORY, { recursive: true });
-
   const extension = getFileExtension(file);
   const fileName = `${randomUUID()}${extension}`;
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-  await writeFile(join(RECIPE_UPLOAD_DIRECTORY, fileName), fileBuffer);
+  try {
+    await mkdir(RECIPE_UPLOAD_DIRECTORY, { recursive: true });
+    await writeFile(join(RECIPE_UPLOAD_DIRECTORY, fileName), fileBuffer);
 
-  return `${RECIPE_UPLOAD_PUBLIC_PATH}/${fileName}`;
+    return `${RECIPE_UPLOAD_PUBLIC_PATH}/${fileName}`;
+  } catch (error) {
+    console.error(
+      'Failed to store recipe image on filesystem, falling back to inline image',
+      error,
+    );
+
+    return `data:${file.type};base64,${fileBuffer.toString('base64')}`;
+  }
 }
 
 /**
@@ -409,7 +422,7 @@ async function resolveRecipeImage(
   if (imageSource === 'url') {
     const nextImageUrl =
       values.imageUrl
-      || (!isUploadedRecipeImage(currentImageUrl) ? currentImageUrl : '');
+      || (!isRecipeFileSourceImage(currentImageUrl) ? currentImageUrl : '');
 
     if (!nextImageUrl) {
       return {
@@ -446,7 +459,7 @@ async function resolveRecipeImage(
   }
 
   if (!imageFile || imageFile.size === 0) {
-    if (isUploadedRecipeImage(currentImageUrl)) {
+    if (isRecipeFileSourceImage(currentImageUrl)) {
       return {
         resolvedImage: {
           imageUrl: currentImageUrl,
@@ -603,8 +616,23 @@ export async function updateRecipe(
     return createValidationErrorState(validatedIngredients.errors, null);
   }
 
+  const currentRecipe = await prisma.recipe.findUnique({
+    where: { id },
+    select: {
+      imageUrl: true,
+    },
+  });
+
+  if (!currentRecipe) {
+    return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
+  }
+
+  const currentImageUrl = currentRecipe.imageUrl ?? '';
   const imageResult = await resolveRecipeImage(
-    parsedValues.data,
+    {
+      ...parsedValues.data,
+      currentImageUrl,
+    },
     getFileFormValue(formData, 'imageFile'),
   );
 
@@ -623,7 +651,7 @@ export async function updateRecipe(
     );
 
     if (!recipe) {
-      if (imageResult.resolvedImage.imageUrl !== parsedValues.data.currentImageUrl) {
+      if (imageResult.resolvedImage.imageUrl !== currentImageUrl) {
         await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
       }
 
@@ -644,7 +672,7 @@ export async function updateRecipe(
   } catch (error) {
     console.error('Failed to update recipe', error);
 
-    if (imageResult.resolvedImage.imageUrl !== parsedValues.data.currentImageUrl) {
+    if (imageResult.resolvedImage.imageUrl !== currentImageUrl) {
       await deleteUploadedRecipeImage(imageResult.resolvedImage.imageUrl);
     }
 

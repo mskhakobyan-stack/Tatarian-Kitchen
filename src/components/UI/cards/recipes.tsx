@@ -61,6 +61,16 @@ interface RecipeCardsProps {
   recipes: SavedRecipe[];
 }
 
+const RECIPE_DESCRIPTION_PREVIEW_LENGTH = 100;
+
+function getRecipeDescriptionPreview(description: string): string {
+  if (description.length <= RECIPE_DESCRIPTION_PREVIEW_LENGTH) {
+    return description;
+  }
+
+  return `${description.slice(0, RECIPE_DESCRIPTION_PREVIEW_LENGTH).trimEnd()}...`;
+}
+
 /**
  * Сетка карточек показывает рецепты всем пользователям, а CRUD-кнопки оставляет
  * только авторизованным.
@@ -88,6 +98,7 @@ export function RecipeCards({
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editPreviewUrl, setEditPreviewUrl] = useState('');
   const [editSelectedFileName, setEditSelectedFileName] = useState('');
+  const [expandedRecipeIds, setExpandedRecipeIds] = useState<string[]>([]);
   const [editIngredientRows, setEditIngredientRows] = useState([
     createEmptyRecipeIngredientDraft(),
   ]);
@@ -201,6 +212,14 @@ export function RecipeCards({
     });
   };
 
+  const toggleRecipeDescription = (recipeId: string) => {
+    setExpandedRecipeIds((currentIds) =>
+      currentIds.includes(recipeId)
+        ? currentIds.filter((id) => id !== recipeId)
+        : [...currentIds, recipeId],
+    );
+  };
+
   return (
     <section className="flex w-full flex-col gap-4">
       {/* Шапка списка объединяет title и краткую статистику по количеству рецептов. */}
@@ -292,7 +311,7 @@ export function RecipeCards({
                   <input
                     name="currentImageUrl"
                     type="hidden"
-                    value={editingRecipe.imageUrl}
+                    value=""
                   />
                   <input
                     name="ingredientsPayload"
@@ -482,83 +501,110 @@ export function RecipeCards({
         <div className="grid items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
           {/* Основная сетка карточек остаётся доступной всем пользователям,
               а кнопки управления показываются только при наличии прав. */}
-          {recipes.map((recipe) => (
-            <div
-              key={recipe.id}
-              className={`flex h-full w-full flex-col self-start ${panelSurfaceClassName} p-4`}
-            >
-              <Card className="h-full w-full overflow-hidden rounded-[28px] border border-[#eadbcc] bg-[#fffdfa]/76 text-[#6a4524] shadow-[0_22px_38px_-30px_rgba(96,53,11,0.28)] backdrop-blur-sm">
-                <div className="border-b border-[#efe2d5] bg-[#fff7ee]/72">
-                  <img
-                    alt={recipe.name}
-                    className="aspect-[4/3] h-full w-full object-cover"
-                    loading="lazy"
-                    src={recipe.imageUrl}
-                  />
-                </div>
-                <Card.Header className="flex flex-col items-start gap-2 px-5 pt-5">
-                  <Card.Title className="text-xl font-semibold tracking-tight text-[#5a3110]">
-                    {recipe.name}
-                  </Card.Title>
-                  <Card.Description className="text-sm leading-6 text-[#8a6844]">
-                    Состав из базы ингредиентов
-                  </Card.Description>
-                </Card.Header>
-                <Card.Content className="flex flex-col gap-4 px-5 pb-4">
-                  <p className="text-sm leading-6 text-[#6a4a26]">
-                    {recipe.description}
-                  </p>
+          {recipes.map((recipe) => {
+            const isDescriptionExpanded = expandedRecipeIds.includes(recipe.id);
+            const isLongDescription =
+              recipe.description.length > RECIPE_DESCRIPTION_PREVIEW_LENGTH;
+            const descriptionId = `recipe-description-${recipe.id}`;
+            const visibleDescription =
+              isLongDescription && !isDescriptionExpanded
+                ? getRecipeDescriptionPreview(recipe.description)
+                : recipe.description;
 
-                  <div className="flex flex-col gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9b7855]">
-                      Ингредиенты
-                    </p>
-                    {recipe.ingredients.length ? (
-                      <ul className="flex flex-col gap-2">
-                        {recipe.ingredients.map((ingredient) => (
-                          <li
-                            key={`${recipe.id}-${ingredient.ingredientId}`}
-                            className="flex items-start justify-between gap-3 rounded-2xl border border-[#efe1d2] bg-[#fff8f0]/68 px-3 py-2 text-sm text-[#6a4a26]"
-                          >
-                            <span className="min-w-0 break-words">
-                              {ingredient.ingredientName}
-                            </span>
-                            <span className="whitespace-nowrap text-[#8b6742]">
-                              {ingredient.quantity} {getUnitLabel(ingredient.unit)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="rounded-2xl border border-dashed border-[#e7d7c7] bg-[#fffdf9]/52 px-3 py-3 text-sm leading-6 text-[#8b6742]">
-                        Состав для этого рецепта пока не указан.
-                      </p>
-                    )}
+            return (
+              <div
+                key={recipe.id}
+                className={`flex h-full w-full flex-col self-start ${panelSurfaceClassName} p-4`}
+              >
+                <Card className="h-full w-full overflow-hidden rounded-[28px] border border-[#eadbcc] bg-[#fffdfa]/76 text-[#6a4524] shadow-[0_22px_38px_-30px_rgba(96,53,11,0.28)] backdrop-blur-sm">
+                  <div className="border-b border-[#efe2d5] bg-[#fff7ee]/72">
+                    <img
+                      alt={recipe.name}
+                      className="aspect-[4/3] h-full w-full object-cover"
+                      loading="lazy"
+                      src={recipe.imageUrl}
+                    />
                   </div>
-                </Card.Content>
-                {canManage ? (
-                  <Card.Footer className="flex flex-wrap gap-2 border-t border-[#efe2d5] bg-[#fff8f1]/70 px-5 py-4">
-                    <Button
-                      className={softButtonClassName}
-                      isDisabled={isPending && pendingRecipeId === recipe.id}
-                      onPress={() => openEditModal(recipe)}
-                      variant="secondary"
-                    >
-                      Редактировать
-                    </Button>
-                    <Button
-                      className={destructiveButtonClassName}
-                      isDisabled={isPending && pendingRecipeId === recipe.id}
-                      onPress={() => handleDelete(recipe)}
-                      variant="secondary"
-                    >
-                      Удалить
-                    </Button>
-                  </Card.Footer>
-                ) : null}
-              </Card>
-            </div>
-          ))}
+                  <Card.Header className="flex flex-col items-start gap-2 px-5 pt-5">
+                    <Card.Title className="text-xl font-semibold tracking-tight text-[#5a3110]">
+                      {recipe.name}
+                    </Card.Title>
+                    <Card.Description className="text-sm leading-6 text-[#8a6844]">
+                      Состав из базы ингредиентов
+                    </Card.Description>
+                  </Card.Header>
+                  <Card.Content className="flex flex-col gap-4 px-5 pb-4">
+                    <div className="flex flex-col items-start gap-2">
+                      <p
+                        className="text-sm leading-6 text-[#6a4a26]"
+                        id={descriptionId}
+                      >
+                        {visibleDescription}
+                      </p>
+                      {isLongDescription ? (
+                        <button
+                          aria-controls={descriptionId}
+                          aria-expanded={isDescriptionExpanded}
+                          className="text-sm font-semibold text-[#7c4a1f] transition hover:text-[#5a3110] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d39d58] focus-visible:ring-offset-2 focus-visible:ring-offset-[#fffdfa]"
+                          onClick={() => toggleRecipeDescription(recipe.id)}
+                          type="button"
+                        >
+                          {isDescriptionExpanded ? 'Свернуть' : 'Раскрыть'}
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9b7855]">
+                        Ингредиенты
+                      </p>
+                      {recipe.ingredients.length ? (
+                        <ul className="flex flex-col gap-2">
+                          {recipe.ingredients.map((ingredient) => (
+                            <li
+                              key={`${recipe.id}-${ingredient.ingredientId}`}
+                              className="flex items-start justify-between gap-3 rounded-2xl border border-[#efe1d2] bg-[#fff8f0]/68 px-3 py-2 text-sm text-[#6a4a26]"
+                            >
+                              <span className="min-w-0 break-words">
+                                {ingredient.ingredientName}
+                              </span>
+                              <span className="whitespace-nowrap text-[#8b6742]">
+                                {ingredient.quantity} {getUnitLabel(ingredient.unit)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="rounded-2xl border border-dashed border-[#e7d7c7] bg-[#fffdf9]/52 px-3 py-3 text-sm leading-6 text-[#8b6742]">
+                          Состав для этого рецепта пока не указан.
+                        </p>
+                      )}
+                    </div>
+                  </Card.Content>
+                  {canManage ? (
+                    <Card.Footer className="flex flex-wrap gap-2 border-t border-[#efe2d5] bg-[#fff8f1]/70 px-5 py-4">
+                      <Button
+                        className={softButtonClassName}
+                        isDisabled={isPending && pendingRecipeId === recipe.id}
+                        onPress={() => openEditModal(recipe)}
+                        variant="secondary"
+                      >
+                        Редактировать
+                      </Button>
+                      <Button
+                        className={destructiveButtonClassName}
+                        isDisabled={isPending && pendingRecipeId === recipe.id}
+                        onPress={() => handleDelete(recipe)}
+                        variant="secondary"
+                      >
+                        Удалить
+                      </Button>
+                    </Card.Footer>
+                  ) : null}
+                </Card>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-[24px] border border-dashed border-[#e5d1ba] bg-[#fffdfa]/48 px-6 py-12 text-center text-sm leading-6 text-[#8b6742]">
