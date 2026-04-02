@@ -9,6 +9,10 @@ import { prisma } from '@/lib/prisma';
 import { signInSchema } from '@/schema/zod';
 
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
+const AUTH_SECRET =
+  process.env.AUTH_SECRET
+  ?? process.env.NEXTAUTH_SECRET
+  ?? null;
 
 interface AuthorizedUser {
   email: string;
@@ -116,7 +120,8 @@ async function authorizeCredentials(
  * Конфиг next-auth описывает весь auth-поток приложения:
  * как создаётся сессия, как обогащается JWT и как проходит вход по credentials.
  */
-export const { handlers, signIn, signOut, auth } = NextAuth({
+const authResult = NextAuth({
+  secret: AUTH_SECRET ?? undefined,
   trustHost: true,
   session: {
     strategy: 'jwt',
@@ -142,4 +147,37 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       authorize: authorizeCredentials,
     }),
   ],
+  logger: {
+    error(error) {
+      console.error('[auth]', error);
+    },
+    warn(code) {
+      console.warn('[auth]', code);
+    },
+  },
 });
+
+export const { handlers, signIn, signOut, auth } = authResult;
+
+/**
+ * Для публичных страниц не хотим ронять весь рендер из-за сбоя auth-конфига
+ * или временной ошибки session endpoint.
+ */
+export async function getOptionalSession(): Promise<{
+  authAvailable: boolean;
+  session: Session | null;
+}> {
+  try {
+    return {
+      authAvailable: true,
+      session: await auth(),
+    };
+  } catch (error) {
+    console.error('[auth] Failed to resolve session in server component', error);
+
+    return {
+      authAvailable: false,
+      session: null,
+    };
+  }
+}

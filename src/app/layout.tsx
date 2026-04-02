@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { auth } from '@/auth/auth';
+import { getOptionalSession } from '@/auth/auth';
 import { HeaderBarShell } from '@/components/UI/header-shell';
 import { siteMetadata } from '@/content/site-content';
 
@@ -29,12 +29,12 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   // Сессию получаем на сервере один раз и передаём дальше в клиентские провайдеры.
-  const session = await auth();
+  const { authAvailable, session } = await getOptionalSession();
 
   return (
     <html lang={siteMetadata.language} className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <AuthSessionProvider session={session}>
+        <AuthSessionProvider authAvailable={authAvailable} session={session}>
           <HeaderBarShell />
           <main className="flex-1">{children}</main>
         </AuthSessionProvider>
