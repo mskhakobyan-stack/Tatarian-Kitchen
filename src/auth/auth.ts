@@ -1,6 +1,7 @@
 import type { Session } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import NextAuth from 'next-auth';
+import { unstable_rethrow } from 'next/navigation';
 import Credentials from 'next-auth/providers/credentials';
 import { ZodError } from 'zod';
 
@@ -173,6 +174,7 @@ export async function getOptionalSession(): Promise<{
       session: await auth(),
     };
   } catch (error) {
+    unstable_rethrow(error);
     console.error('[auth] Failed to resolve session in server component', error);
 
     return {

@@ -30,6 +30,7 @@ export interface SavedIngredient {
   category: Category;
   description: string;
   name: string;
+  ownerId: string | null;
   price: number;
   unit: Unit;
 }

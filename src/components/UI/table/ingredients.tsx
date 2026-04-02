@@ -56,6 +56,7 @@ interface IngredientOption<T extends string> {
 }
 
 interface IngredientsTableProps {
+  currentUserId: string | null;
   ingredients: SavedIngredient[];
   onIngredientDeleted: (ingredientId: string) => void;
   onIngredientUpdated: (ingredient: SavedIngredient) => void;
@@ -127,6 +128,7 @@ function getEditFormValues(formData: FormData): IngredientFormFields {
  * действия по редактированию и удалению.
  */
 export function IngredientsTable({
+  currentUserId,
   ingredients,
   onIngredientDeleted,
   onIngredientUpdated,
@@ -260,51 +262,65 @@ export function IngredientsTable({
               )}
             >
               {(ingredient) => (
-                <Table.Row className={tableBodyRowClassName} id={ingredient.id}>
-                  <Table.Cell className={tableBodyCellClassName}>
-                    <span className="font-semibold text-[#5a3110]">
-                      {ingredient.name}
-                    </span>
-                  </Table.Cell>
-                  <Table.Cell className={tableBodyCellClassName}>
-                    {getCategoryLabel(ingredient.category)}
-                  </Table.Cell>
-                  <Table.Cell className={tableBodyCellClassName}>
-                    {getUnitLabel(ingredient.unit)}
-                  </Table.Cell>
-                  <Table.Cell className={tableBodyCellClassName}>
-                    {PRICE_FORMATTER.format(ingredient.price)}
-                  </Table.Cell>
-                  <Table.Cell className={tableBodyCellClassName}>
-                    <span className="max-w-md whitespace-normal text-sm leading-6 text-[#6a4a26]">
-                      {ingredient.description}
-                    </span>
-                  </Table.Cell>
-                  <Table.Cell className={tableBodyCellClassName}>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        className={softButtonClassName}
-                        isDisabled={
-                          isPending && pendingIngredientId === ingredient.id
-                        }
-                        onPress={() => openEditModal(ingredient)}
-                        variant="secondary"
-                      >
-                        Редактировать
-                      </Button>
-                      <Button
-                        className={destructiveButtonClassName}
-                        isDisabled={
-                          isPending && pendingIngredientId === ingredient.id
-                        }
-                        onPress={() => handleDelete(ingredient)}
-                        variant="secondary"
-                      >
-                        Удалить
-                      </Button>
-                    </div>
-                  </Table.Cell>
-                </Table.Row>
+                (() => {
+                  const isOwnedByCurrentUser =
+                    Boolean(currentUserId)
+                    && ingredient.ownerId === currentUserId;
+
+                  return (
+                    <Table.Row className={tableBodyRowClassName} id={ingredient.id}>
+                      <Table.Cell className={tableBodyCellClassName}>
+                        <span className="font-semibold text-[#5a3110]">
+                          {ingredient.name}
+                        </span>
+                      </Table.Cell>
+                      <Table.Cell className={tableBodyCellClassName}>
+                        {getCategoryLabel(ingredient.category)}
+                      </Table.Cell>
+                      <Table.Cell className={tableBodyCellClassName}>
+                        {getUnitLabel(ingredient.unit)}
+                      </Table.Cell>
+                      <Table.Cell className={tableBodyCellClassName}>
+                        {PRICE_FORMATTER.format(ingredient.price)}
+                      </Table.Cell>
+                      <Table.Cell className={tableBodyCellClassName}>
+                        <span className="max-w-md whitespace-normal text-sm leading-6 text-[#6a4a26]">
+                          {ingredient.description}
+                        </span>
+                      </Table.Cell>
+                      <Table.Cell className={tableBodyCellClassName}>
+                        {isOwnedByCurrentUser ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              className={softButtonClassName}
+                              isDisabled={
+                                isPending && pendingIngredientId === ingredient.id
+                              }
+                              onPress={() => openEditModal(ingredient)}
+                              variant="secondary"
+                            >
+                              Редактировать
+                            </Button>
+                            <Button
+                              className={destructiveButtonClassName}
+                              isDisabled={
+                                isPending && pendingIngredientId === ingredient.id
+                              }
+                              onPress={() => handleDelete(ingredient)}
+                              variant="secondary"
+                            >
+                              Удалить
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-medium uppercase tracking-[0.12em] text-[#9b7855]">
+                            {currentUserId ? 'Только автор' : 'После входа'}
+                          </span>
+                        )}
+                      </Table.Cell>
+                    </Table.Row>
+                  );
+                })()
               )}
             </Table.Body>
           </Table.Content>

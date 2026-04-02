@@ -9,19 +9,19 @@ import type {
 
 interface RecipeFormShellProps {
   availableIngredients: RecipeIngredientOption[];
-  canManage: boolean;
+  currentUserId: string | null;
   initialRecipes: SavedRecipe[];
 }
 
 export function RecipeFormShell({
   availableIngredients = [],
-  canManage,
+  currentUserId,
   initialRecipes,
 }: RecipeFormShellProps) {
   return (
     <RecipesManager
       availableIngredients={availableIngredients}
-      canManage={canManage}
+      currentUserId={currentUserId}
       initialRecipes={initialRecipes}
     />
   );

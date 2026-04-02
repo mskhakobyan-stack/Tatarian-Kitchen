@@ -12,6 +12,7 @@ import {
 import type { SavedIngredient } from '@/types/ingredient-form';
 
 interface IngredientsManagerProps {
+  currentUserId: string | null;
   initialIngredients: SavedIngredient[];
 }
 
@@ -20,6 +21,7 @@ interface IngredientsManagerProps {
  * сразу отражались в интерфейсе без дополнительной ручной синхронизации.
  */
 export function IngredientsManager({
+  currentUserId,
   initialIngredients,
 }: IngredientsManagerProps) {
   /**
@@ -27,6 +29,7 @@ export function IngredientsManager({
    * все server action уже возвращают полные данные изменённой записи.
    */
   const [ingredients, setIngredients] = useState(initialIngredients);
+  const canCreateIngredients = Boolean(currentUserId);
 
   const handleIngredientCreated = (ingredient: SavedIngredient) => {
     setIngredients((current) => prependOrReplaceById(current, ingredient));
@@ -42,11 +45,26 @@ export function IngredientsManager({
 
   return (
     <div className="flex w-full flex-col gap-10">
-      {/* Форма всегда идёт первой, чтобы пользователь мог сразу добавлять новые позиции в базу. */}
-      <IngredientForm onIngredientCreated={handleIngredientCreated} />
+      {!currentUserId ? (
+        <p className="rounded-2xl border border-[#eadbcc] bg-[#fffdfa]/56 px-4 py-3 text-sm leading-6 text-[#8b6742]">
+          Просматривать ингредиенты можно всем, а добавлять новые и
+          редактировать свои — только после входа в аккаунт.
+        </p>
+      ) : (
+        <p className="rounded-2xl border border-[#eadbcc] bg-[#fffdfa]/56 px-4 py-3 text-sm leading-6 text-[#8b6742]">
+          Вы видите все ингредиенты, но редактировать и удалять можете только
+          свои записи.
+        </p>
+      )}
+
+      {/* Форму показываем только авторизованным пользователям. */}
+      {canCreateIngredients ? (
+        <IngredientForm onIngredientCreated={handleIngredientCreated} />
+      ) : null}
 
       {/* Таблица использует тот же локальный список, поэтому изменения видны мгновенно. */}
       <IngredientsTable
+        currentUserId={currentUserId}
         ingredients={ingredients}
         onIngredientDeleted={handleIngredientDeleted}
         onIngredientUpdated={handleIngredientUpdated}

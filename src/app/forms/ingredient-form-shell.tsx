@@ -41,11 +41,18 @@ const IngredientsManager = dynamic(
 );
 
 interface IngredientFormShellProps {
+  currentUserId: string | null;
   initialIngredients: SavedIngredient[];
 }
 
 export function IngredientFormShell({
+  currentUserId,
   initialIngredients,
 }: IngredientFormShellProps) {
-  return <IngredientsManager initialIngredients={initialIngredients} />;
+  return (
+    <IngredientsManager
+      currentUserId={currentUserId}
+      initialIngredients={initialIngredients}
+    />
+  );
 }

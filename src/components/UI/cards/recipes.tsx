@@ -55,7 +55,7 @@ import {
 
 interface RecipeCardsProps {
   availableIngredients: RecipeIngredientOption[];
-  canManage: boolean;
+  currentUserId: string | null;
   onRecipeDeleted: (recipeId: string) => void;
   onRecipeUpdated: (recipe: SavedRecipe) => void;
   recipes: SavedRecipe[];
@@ -77,7 +77,7 @@ function getRecipeDescriptionPreview(description: string): string {
  */
 export function RecipeCards({
   availableIngredients = [],
-  canManage,
+  currentUserId,
   onRecipeDeleted,
   onRecipeUpdated,
   recipes,
@@ -234,12 +234,16 @@ export function RecipeCards({
         </p>
       </div>
 
-      {!canManage ? (
+      {!currentUserId ? (
         <p className="rounded-2xl border border-[#eadbcc] bg-[#fffdfa]/56 px-4 py-3 text-sm leading-6 text-[#8b6742]">
-          Просматривать рецепты можно всем, а добавлять и редактировать их —
-          только после входа в аккаунт.
+          Просматривать рецепты можно всем, а добавлять новые и редактировать
+          свои — только после входа в аккаунт.
         </p>
-      ) : null}
+      ) : (
+        <p className="rounded-2xl border border-[#eadbcc] bg-[#fffdfa]/56 px-4 py-3 text-sm leading-6 text-[#8b6742]">
+          Вы видите все рецепты, но редактировать и удалять можете только свои.
+        </p>
+      )}
 
       <FormStatusMessage message={statusMessage} tone={statusTone} />
 
@@ -505,6 +509,8 @@ export function RecipeCards({
             const isDescriptionExpanded = expandedRecipeIds.includes(recipe.id);
             const isLongDescription =
               recipe.description.length > RECIPE_DESCRIPTION_PREVIEW_LENGTH;
+            const isOwnedByCurrentUser =
+              Boolean(currentUserId) && recipe.ownerId === currentUserId;
             const descriptionId = `recipe-description-${recipe.id}`;
             const visibleDescription =
               isLongDescription && !isDescriptionExpanded
@@ -581,7 +587,7 @@ export function RecipeCards({
                       )}
                     </div>
                   </Card.Content>
-                  {canManage ? (
+                  {isOwnedByCurrentUser ? (
                     <Card.Footer className="flex flex-wrap gap-2 border-t border-[#efe2d5] bg-[#fff8f1]/70 px-5 py-4">
                       <Button
                         className={softButtonClassName}
@@ -599,6 +605,10 @@ export function RecipeCards({
                       >
                         Удалить
                       </Button>
+                    </Card.Footer>
+                  ) : currentUserId ? (
+                    <Card.Footer className="border-t border-[#efe2d5] bg-[#fff8f1]/70 px-5 py-4 text-sm leading-6 text-[#8b6742]">
+                      Редактирование доступно только автору рецепта.
                     </Card.Footer>
                   ) : null}
                 </Card>

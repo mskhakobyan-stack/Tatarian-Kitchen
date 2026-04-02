@@ -57,6 +57,7 @@ export const SiteLogo = () => {
 export default function HeaderBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [signOutError, setSignOutError] = useState('');
   const [isSigningOut, startTransition] = useTransition();
   const authStatus = useAuthStore((store) => store.status);
@@ -64,9 +65,7 @@ export default function HeaderBar() {
   const clearAuth = useAuthStore((store) => store.clearAuth);
   const isAuthenticated =
     authStatus === 'authenticated' && Boolean(userEmail);
-  const visibleNavigationItems = isAuthenticated
-    ? navigationItems
-    : navigationItems.filter(({ href }) => href !== '/ingredients');
+  const visibleNavigationItems = navigationItems;
 
   const handleSignOut = () => {
     startTransition(async () => {
@@ -75,6 +74,7 @@ export default function HeaderBar() {
       try {
         await signOut({ redirect: false });
         clearAuth();
+        setIsMobileMenuOpen(false);
         router.refresh();
       } catch (error) {
         console.error('Failed to sign out', error);
@@ -85,76 +85,155 @@ export default function HeaderBar() {
 
   return (
     <Header className="border-b border-[#ead8c3] bg-[#fffbf6]/72 px-4 py-4 font-sans text-[#6a4524] shadow-[0_12px_32px_-28px_rgba(96,53,11,0.28)] backdrop-blur-md">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
-        <Link
-          className="flex items-center gap-3 text-inherit no-underline"
-          href="/"
-        >
-          <SiteLogo />
-          <span className="text-base font-semibold tracking-[0.04em] text-[#6a4524] sm:text-lg">
-            {siteMetadata.name}
-          </span>
-        </Link>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            className="flex min-w-0 items-center gap-3 text-inherit no-underline"
+            href="/"
+          >
+            <SiteLogo />
+            <span className="truncate text-base font-semibold tracking-[0.04em] text-[#6a4524] sm:text-lg">
+              {siteMetadata.name}
+            </span>
+          </Link>
 
-        <Toolbar
-          className="hidden items-center gap-3 sm:flex"
-          orientation="horizontal"
-        >
-          {visibleNavigationItems.map(({ href, label }) => {
-            const isActive = pathname === href;
+          <Button
+            aria-controls="mobile-header-menu"
+            aria-expanded={isMobileMenuOpen}
+            className={`sm:hidden ${softButtonClassName}`}
+            onPress={() => setIsMobileMenuOpen((currentOpen) => !currentOpen)}
+            type="button"
+            variant="secondary"
+          >
+            {isMobileMenuOpen ? 'Закрыть' : 'Меню'}
+          </Button>
 
-            return (
-              <Link
-                key={href}
-                aria-current={isActive ? 'page' : undefined}
-                className={getNavLinkClassName(isActive)}
-                href={href}
-              >
-                {label}
-              </Link>
-            );
-          })}
-        </Toolbar>
+          <Toolbar
+            className="hidden min-w-0 flex-1 items-center justify-center gap-3 sm:flex"
+            orientation="horizontal"
+          >
+            {visibleNavigationItems.map(({ href, label }) => {
+              const isActive = pathname === href;
 
-        {isAuthenticated ? (
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-3 rounded-full border border-[#ead8c3] bg-[#fffaf3]/70 px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.2)] backdrop-blur-sm">
-              <p className="text-sm font-medium tracking-[0.01em] text-[#7a5634]">
-                Здравствуйте, {userEmail}!
-              </p>
-              <Button
-                className={softButtonClassName}
-                isDisabled={isSigningOut}
-                onPress={handleSignOut}
-                variant="secondary"
-              >
-                {isSigningOut ? 'Выход...' : 'Выход'}
-              </Button>
+              return (
+                <Link
+                  key={href}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={getNavLinkClassName(isActive)}
+                  href={href}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </Toolbar>
+
+          {isAuthenticated ? (
+            <div className="hidden max-w-[28rem] flex-col items-end gap-2 sm:flex">
+              <div className="flex min-w-0 items-center gap-3 rounded-full border border-[#ead8c3] bg-[#fffaf3]/70 px-4 py-2 shadow-[0_10px_24px_-20px_rgba(96,53,11,0.2)] backdrop-blur-sm">
+                <p className="min-w-0 truncate text-sm font-medium tracking-[0.01em] text-[#7a5634]">
+                  Здравствуйте, {userEmail}!
+                </p>
+                <Button
+                  className={softButtonClassName}
+                  isDisabled={isSigningOut}
+                  onPress={handleSignOut}
+                  variant="secondary"
+                >
+                  {isSigningOut ? 'Выход...' : 'Выход'}
+                </Button>
+              </div>
+              {signOutError ? (
+                <p className="text-right text-sm text-danger">{signOutError}</p>
+              ) : null}
             </div>
-            {signOutError ? (
-              <p className="text-sm text-danger">{signOutError}</p>
-            ) : null}
+          ) : (
+            <div className="hidden items-center gap-3 sm:flex">
+              <AuthDialog
+                buttonClassName={softButtonClassName}
+                buttonLabel="Вход"
+                buttonVariant="secondary"
+                heading="Вход"
+              >
+                <LoginForm />
+              </AuthDialog>
+              <AuthDialog
+                buttonClassName={filledButtonClassName}
+                buttonLabel="Регистрация"
+                buttonVariant="primary"
+                heading="Регистрация"
+              >
+                <RegistrationForm />
+              </AuthDialog>
+            </div>
+          )}
+        </div>
+
+        {isMobileMenuOpen ? (
+          <div
+            className="flex flex-col gap-4 rounded-[28px] border border-[#ead8c3] bg-[#fff9f2]/88 p-4 shadow-[0_16px_30px_-28px_rgba(96,53,11,0.35)] backdrop-blur-sm sm:hidden"
+            id="mobile-header-menu"
+          >
+            <nav className="flex flex-col gap-2">
+              {visibleNavigationItems.map(({ href, label }) => {
+                const isActive = pathname === href;
+
+                return (
+                <Link
+                  key={href}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`${getNavLinkClassName(isActive)} block text-center`}
+                  href={href}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  {label}
+                </Link>
+                );
+              })}
+            </nav>
+
+            {isAuthenticated ? (
+              <div className="flex flex-col gap-3 rounded-[24px] border border-[#ead8c3] bg-[#fffdf8]/80 p-4">
+                <p className="text-sm leading-6 text-[#7a5634]">
+                  Здравствуйте,
+                  {' '}
+                  <span className="break-all font-semibold">{userEmail}</span>
+                  !
+                </p>
+                <Button
+                  className={`${softButtonClassName} w-full justify-center`}
+                  isDisabled={isSigningOut}
+                  onPress={handleSignOut}
+                  variant="secondary"
+                >
+                  {isSigningOut ? 'Выход...' : 'Выход'}
+                </Button>
+                {signOutError ? (
+                  <p className="text-sm text-danger">{signOutError}</p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <AuthDialog
+                  buttonClassName={`${softButtonClassName} w-full justify-center`}
+                  buttonLabel="Вход"
+                  buttonVariant="secondary"
+                  heading="Вход"
+                >
+                  <LoginForm />
+                </AuthDialog>
+                <AuthDialog
+                  buttonClassName={`${filledButtonClassName} w-full justify-center`}
+                  buttonLabel="Регистрация"
+                  buttonVariant="primary"
+                  heading="Регистрация"
+                >
+                  <RegistrationForm />
+                </AuthDialog>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <AuthDialog
-              buttonClassName={softButtonClassName}
-              buttonLabel="Вход"
-              buttonVariant="secondary"
-              heading="Вход"
-            >
-              <LoginForm />
-            </AuthDialog>
-            <AuthDialog
-              buttonClassName={filledButtonClassName}
-              buttonLabel="Регистрация"
-              buttonVariant="primary"
-              heading="Регистрация"
-            >
-              <RegistrationForm />
-            </AuthDialog>
-          </div>
-        )}
+        ) : null}
       </div>
     </Header>
   );

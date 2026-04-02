@@ -21,7 +21,7 @@ import type {
 
 interface RecipesManagerProps {
   availableIngredients: RecipeIngredientOption[];
-  canManage: boolean;
+  currentUserId: string | null;
   initialRecipes: SavedRecipe[];
 }
 
@@ -31,7 +31,7 @@ interface RecipesManagerProps {
  */
 export function RecipesManager({
   availableIngredients = [],
-  canManage,
+  currentUserId,
   initialRecipes,
 }: RecipesManagerProps) {
   /**
@@ -43,6 +43,7 @@ export function RecipesManager({
     initialRecipes.length === 0,
   );
   const createFormRef = useRef<HTMLDivElement | null>(null);
+  const canCreateRecipes = Boolean(currentUserId);
   const shouldShowCreateForm = isCreateFormOpen || recipes.length === 0;
 
   /**
@@ -76,7 +77,7 @@ export function RecipesManager({
   return (
     <div className="flex w-full flex-col gap-10">
       {/* Верхняя панель нужна только когда уже есть рецепты и доступно создание новых. */}
-      {canManage && recipes.length ? (
+      {canCreateRecipes && recipes.length ? (
         <div className="flex flex-col items-start gap-3">
           <div className="flex flex-wrap gap-2">
             <Button
@@ -99,7 +100,7 @@ export function RecipesManager({
       ) : null}
 
       {/* Форму создания показываем по кнопке или сразу, если база рецептов пока пустая. */}
-      {canManage && shouldShowCreateForm ? (
+      {canCreateRecipes && shouldShowCreateForm ? (
         <div ref={createFormRef}>
           <RecipeForm
             availableIngredients={availableIngredients}
@@ -111,7 +112,7 @@ export function RecipesManager({
       {/* Список карточек рендерится всегда: он доступен и авторизованным, и гостям. */}
       <RecipeCards
         availableIngredients={availableIngredients}
-        canManage={canManage}
+        currentUserId={currentUserId}
         onRecipeDeleted={handleRecipeDeleted}
         onRecipeUpdated={handleRecipeUpdated}
         recipes={recipes}

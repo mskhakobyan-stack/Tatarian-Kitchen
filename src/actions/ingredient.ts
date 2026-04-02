@@ -34,7 +34,9 @@ const INGREDIENT_DELETE_IN_USE_MESSAGE =
 const INGREDIENT_VALIDATION_ERROR_MESSAGE =
   'Проверьте данные формы и попробуйте снова.';
 const INGREDIENT_UNAUTHORIZED_MESSAGE =
-  'Страница ингредиентов доступна только после входа в аккаунт.';
+  'Добавлять, изменять и удалять ингредиенты могут только авторизованные пользователи.';
+const INGREDIENT_FORBIDDEN_MESSAGE =
+  'Редактировать и удалять можно только свои ингредиенты.';
 const INGREDIENT_FORM_FIELDS = [
   { key: 'category' },
   { key: 'description' },
@@ -48,9 +50,15 @@ interface IngredientRow {
   category: SavedIngredient['category'];
   description: string | null;
   name: string;
+  ownerId: string | null;
   price: number | null;
   unit: SavedIngredient['unit'];
 }
+
+type IngredientPersistenceInput = Pick<
+  SavedIngredient,
+  'category' | 'description' | 'name' | 'price' | 'unit'
+>;
 
 /**
  * Собираем сырые значения формы в объект, который затем валидирует zod.
@@ -67,6 +75,7 @@ function mapIngredientRow(row: IngredientRow): SavedIngredient {
   return {
     ...row,
     description: row.description ?? '',
+    ownerId: row.ownerId ?? null,
     price: row.price ?? 0,
   };
 }
@@ -116,10 +125,10 @@ function isForeignKeyConstraintError(
  * Проверяем сессию внутри каждого server action: одной защиты страницы
  * недостаточно, потому что action можно вызвать и напрямую.
  */
-async function isAuthenticated(): Promise<boolean> {
+async function getAuthenticatedUserId(): Promise<string | null> {
   const session = await auth();
 
-  return Boolean(session?.user);
+  return typeof session?.user?.id === 'string' ? session.user.id : null;
 }
 
 /**
@@ -127,15 +136,24 @@ async function isAuthenticated(): Promise<boolean> {
  * для подтверждения успешной записи в интерфейсе.
  */
 async function insertIngredient(
-  data: Omit<SavedIngredient, 'id'>,
+  data: IngredientPersistenceInput,
+  ownerId: string,
 ): Promise<SavedIngredient> {
   const ingredient = await prisma.ingredient.create({
-    data,
+    data: {
+      ...data,
+      owner: {
+        connect: {
+          id: ownerId,
+        },
+      },
+    },
     select: {
       id: true,
       category: true,
       description: true,
       name: true,
+      ownerId: true,
       price: true,
       unit: true,
     },
@@ -149,7 +167,7 @@ async function insertIngredient(
  */
 async function persistIngredientUpdate(
   id: string,
-  data: Omit<SavedIngredient, 'id'>,
+  data: IngredientPersistenceInput,
 ): Promise<SavedIngredient> {
   const ingredient = await prisma.ingredient.update({
     where: { id },
@@ -159,6 +177,7 @@ async function persistIngredientUpdate(
       category: true,
       description: true,
       name: true,
+      ownerId: true,
       price: true,
       unit: true,
     },
@@ -175,7 +194,9 @@ export async function createIngredient(
   prevState: IngredientFormState,
   formData: FormData,
 ): Promise<IngredientFormState> {
-  if (!(await isAuthenticated())) {
+  const userId = await getAuthenticatedUserId();
+
+  if (!userId) {
     return createErrorState(
       INGREDIENT_UNAUTHORIZED_MESSAGE,
       {},
@@ -195,7 +216,7 @@ export async function createIngredient(
   }
 
   try {
-    const ingredient = await insertIngredient(result.data);
+    const ingredient = await insertIngredient(result.data, userId);
     revalidatePath('/ingredients');
 
     return {
@@ -223,7 +244,9 @@ export async function updateIngredient(
   id: string,
   fields: IngredientFormFields,
 ): Promise<IngredientFormState> {
-  if (!(await isAuthenticated())) {
+  const userId = await getAuthenticatedUserId();
+
+  if (!userId) {
     return createErrorState(INGREDIENT_UNAUTHORIZED_MESSAGE);
   }
 
@@ -233,6 +256,21 @@ export async function updateIngredient(
 
   if (!result.success) {
     return createValidationErrorState(result.error.flatten().fieldErrors, null);
+  }
+
+  const existingIngredient = await prisma.ingredient.findUnique({
+    where: { id },
+    select: {
+      ownerId: true,
+    },
+  });
+
+  if (!existingIngredient) {
+    return createErrorState(INGREDIENT_UPDATE_ERROR_MESSAGE);
+  }
+
+  if (existingIngredient.ownerId !== userId) {
+    return createErrorState(INGREDIENT_FORBIDDEN_MESSAGE);
   }
 
   try {
@@ -258,10 +296,35 @@ export async function updateIngredient(
 export async function deleteIngredient(
   id: string,
 ): Promise<IngredientDeleteResult> {
-  if (!(await isAuthenticated())) {
+  const userId = await getAuthenticatedUserId();
+
+  if (!userId) {
     return {
       status: 'error',
       message: INGREDIENT_UNAUTHORIZED_MESSAGE,
+      deletedIngredientId: null,
+    };
+  }
+
+  const existingIngredient = await prisma.ingredient.findUnique({
+    where: { id },
+    select: {
+      ownerId: true,
+    },
+  });
+
+  if (!existingIngredient) {
+    return {
+      status: 'error',
+      message: INGREDIENT_DELETE_ERROR_MESSAGE,
+      deletedIngredientId: null,
+    };
+  }
+
+  if (existingIngredient.ownerId !== userId) {
+    return {
+      status: 'error',
+      message: INGREDIENT_FORBIDDEN_MESSAGE,
       deletedIngredientId: null,
     };
   }

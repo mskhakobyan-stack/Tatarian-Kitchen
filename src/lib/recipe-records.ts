@@ -17,6 +17,7 @@ const recipeDetailsSelect = {
   name: true,
   description: true,
   imageUrl: true,
+  ownerId: true,
   ingredients: {
     select: {
       ingredientId: true,
@@ -55,6 +56,7 @@ type RecipePersistenceInput = {
   imageUrl: string;
   ingredients: RecipeIngredientInput[];
   name: string;
+  ownerId?: string | null;
 };
 
 type RecipeDatabase = Pick<
@@ -79,6 +81,7 @@ function mapRecipeRecord(recipe: RecipeRecord): SavedRecipe {
     name: recipe.name,
     description: recipe.description ?? '',
     imageUrl: recipe.imageUrl ?? '',
+    ownerId: recipe.ownerId ?? null,
     ingredients,
   };
 }
@@ -98,6 +101,15 @@ function getRecipePersistenceData(input: RecipePersistenceInput) {
     name: input.name,
     description: input.description,
     imageUrl: input.imageUrl,
+    ...(input.ownerId
+      ? {
+          owner: {
+            connect: {
+              id: input.ownerId,
+            },
+          },
+        }
+      : {}),
     ingredients: {
       create: input.ingredients.map((ingredient) => ({
         quantity: ingredient.quantity,

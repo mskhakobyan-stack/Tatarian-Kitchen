@@ -1,6 +1,15 @@
 'use client';
 
-import { useActionState, useRef, useState } from 'react';
+import {
+  useActionState,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { getSession, signIn } from 'next-auth/react';
 import {
   Button,
   Description,
@@ -18,6 +27,7 @@ import {
   validatePasswordValue,
 } from '@/auth/auth-validation';
 import { registerUser } from '@/actions/register';
+import { useAuthStore } from '@/auth/auth-store';
 import {
   FieldServerError,
   FormStatusMessage,
@@ -30,6 +40,37 @@ import {
   softButtonClassName,
 } from '@/components/UI/ui-theme';
 import { initialRegisterFormState } from '@/types/form-data';
+
+const REGISTRATION_SIGN_IN_ERROR_MESSAGE =
+  'Пользователь зарегистрирован, но автоматически войти не удалось. Попробуйте войти вручную.';
+const REGISTRATION_SIGN_IN_PENDING_MESSAGE =
+  'Регистрация прошла успешно. Выполняем вход...';
+const REGISTRATION_SIGN_IN_SUCCESS_MESSAGE =
+  'Регистрация завершена, вход выполнен.';
+
+interface SubmittedRegistrationCredentials {
+  attemptId: number;
+  email: string;
+  password: string;
+}
+
+function getRegistrationCredentialsFromForm(
+  formElement: HTMLFormElement,
+): SubmittedRegistrationCredentials | null {
+  const formData = new FormData(formElement);
+  const email = formData.get('email');
+  const password = formData.get('password');
+
+  if (typeof email !== 'string' || typeof password !== 'string') {
+    return null;
+  }
+
+  return {
+    attemptId: Date.now(),
+    email,
+    password,
+  };
+}
 
 /**
  * Сверяем подтверждение пароля с текущим значением первого поля пароля.
@@ -50,22 +91,108 @@ function validatePasswordConfirmation(
  * ошибки БД и успешный ответ сразу возвращаются в React-состояние.
  */
 export function RegistrationForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const submittedCredentialsRef =
+    useRef<SubmittedRegistrationCredentials | null>(null);
+  const lastAutoSignInAttemptIdRef = useRef<number | null>(null);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] =
     useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const [isSigningIn, startSignInTransition] = useTransition();
   const [state, formAction, pending] = useActionState(
     registerUser,
     initialRegisterFormState,
   );
+  const clearAuth = useAuthStore((store) => store.clearAuth);
+  const syncSession = useAuthStore((store) => store.syncSession);
+  const callbackUrl = searchParams.get('callbackUrl');
+  const safeCallbackUrl =
+    callbackUrl &&
+    callbackUrl.startsWith('/') &&
+    !callbackUrl.startsWith('//')
+      ? callbackUrl
+      : null;
+
+  const handleAutoSignIn = useEffectEvent(
+    (credentials: SubmittedRegistrationCredentials) => {
+      startSignInTransition(async () => {
+        setAuthMessage(REGISTRATION_SIGN_IN_PENDING_MESSAGE);
+
+        try {
+          const result = await signIn('credentials', {
+            email: credentials.email,
+            password: credentials.password,
+            redirect: false,
+          });
+
+          if (!result || result.error) {
+            clearAuth();
+            setAuthMessage(REGISTRATION_SIGN_IN_ERROR_MESSAGE);
+            return;
+          }
+
+          const session = await getSession();
+
+          if (!session?.user) {
+            clearAuth();
+            setAuthMessage(REGISTRATION_SIGN_IN_ERROR_MESSAGE);
+            return;
+          }
+
+          syncSession(session);
+          setAuthMessage(REGISTRATION_SIGN_IN_SUCCESS_MESSAGE);
+
+          if (safeCallbackUrl) {
+            router.replace(safeCallbackUrl);
+            return;
+          }
+
+          router.refresh();
+        } catch (error) {
+          console.error('Failed to sign in after registration', error);
+          clearAuth();
+          setAuthMessage(REGISTRATION_SIGN_IN_ERROR_MESSAGE);
+        }
+      });
+    },
+  );
+
+  useEffect(() => {
+    if (state.status !== 'success') {
+      return;
+    }
+
+    const submittedCredentials = submittedCredentialsRef.current;
+
+    if (!submittedCredentials) {
+      return;
+    }
+
+    if (lastAutoSignInAttemptIdRef.current === submittedCredentials.attemptId) {
+      return;
+    }
+
+    lastAutoSignInAttemptIdRef.current = submittedCredentials.attemptId;
+    handleAutoSignIn(submittedCredentials);
+  }, [state.status]);
 
   return (
     <Form
       action={formAction}
       className={authFormClassName}
+      onSubmit={(event) => {
+        submittedCredentialsRef.current = getRegistrationCredentialsFromForm(
+          event.currentTarget,
+        );
+        setAuthMessage('');
+      }}
       onReset={() => {
         setIsPasswordVisible(false);
         setIsConfirmPasswordVisible(false);
+        setAuthMessage('');
       }}
     >
       <TextField
@@ -134,22 +261,28 @@ export function RegistrationForm() {
       </TextField>
 
       <FormStatusMessage
-        message={state.message}
-        tone={state.status === 'success' ? 'success' : 'error'}
+        message={authMessage || state.message}
+        tone={
+          authMessage && authMessage === REGISTRATION_SIGN_IN_ERROR_MESSAGE
+            ? 'error'
+            : state.status === 'success'
+              ? 'success'
+              : 'error'
+        }
       />
 
       <div className="flex gap-2">
         <Button
           className={filledButtonClassName}
-          isDisabled={pending}
+          isDisabled={pending || isSigningIn}
           type="submit"
         >
           <SuccessIcon />
-          {pending ? 'Отправка...' : 'Отправить'}
+          {pending || isSigningIn ? 'Отправка...' : 'Отправить'}
         </Button>
         <Button
           className={softButtonClassName}
-          isDisabled={pending}
+          isDisabled={pending || isSigningIn}
           type="reset"
           variant="secondary"
         >

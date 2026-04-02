@@ -53,6 +53,7 @@ export interface SavedRecipe {
   imageUrl: string;
   ingredients: SavedRecipeIngredient[];
   name: string;
+  ownerId: string | null;
 }
 
 export interface RecipeFormState {

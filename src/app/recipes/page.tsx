@@ -1,4 +1,4 @@
-import { auth } from '@/auth/auth';
+import { getOptionalSession } from '@/auth/auth';
 import { RecipeFormShell } from '@/app/forms/recipe-form-shell';
 import { PageShell } from '@/components/UI/page-shell';
 import { staticPageContent } from '@/content/site-content';
@@ -13,18 +13,19 @@ import {
  */
 export default async function RecipesPage() {
   const content = staticPageContent.recipes;
-  const [session, recipes, ingredientOptions] = await Promise.all([
-    auth(),
+  const [{ session }, recipes, ingredientOptions] = await Promise.all([
+    getOptionalSession(),
     listRecipesForDisplay(),
     listRecipeIngredientOptions(),
   ]);
-  const canManage = Boolean(session?.user);
+  const currentUserId =
+    typeof session?.user?.id === 'string' ? session.user.id : null;
 
   return (
     <PageShell description={content.description} title={content.title}>
       <RecipeFormShell
         availableIngredients={ingredientOptions}
-        canManage={canManage}
+        currentUserId={currentUserId}
         initialRecipes={recipes}
       />
     </PageShell>

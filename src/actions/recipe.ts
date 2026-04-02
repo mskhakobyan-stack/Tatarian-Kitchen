@@ -56,10 +56,12 @@ const RECIPE_UPDATE_ERROR_MESSAGE =
   'Не удалось обновить рецепт. Попробуйте ещё раз.';
 const RECIPE_DELETE_ERROR_MESSAGE =
   'Не удалось удалить рецепт. Попробуйте ещё раз.';
+const RECIPE_FORBIDDEN_MESSAGE =
+  'Редактировать и удалять можно только свои рецепты.';
 const RECIPE_VALIDATION_ERROR_MESSAGE =
   'Проверьте данные формы и попробуйте снова.';
 const RECIPE_UNAUTHORIZED_MESSAGE =
-  'Добавлять и изменять рецепты могут только авторизованные пользователи.';
+  'Добавлять, изменять и удалять рецепты могут только авторизованные пользователи.';
 const RECIPE_IMAGE_REQUIRED_MESSAGE =
   'Добавьте изображение по ссылке или загрузите файл.';
 const RECIPE_FILE_REQUIRED_MESSAGE = 'Выберите файл изображения.';
@@ -161,8 +163,10 @@ function createValidationErrorState(
  * Повторная проверка прав внутри каждого action защищает приложение
  * от прямых POST-запросов мимо клиентского интерфейса.
  */
-function isAuthenticated(session: { user?: unknown } | null): boolean {
-  return Boolean(session && 'user' in session && session.user);
+function getAuthenticatedUserId(
+  session: { user?: { id?: string | null } | null } | null,
+): string | null {
+  return typeof session?.user?.id === 'string' ? session.user.id : null;
 }
 
 /**
@@ -519,8 +523,9 @@ export async function createRecipe(
   formData: FormData,
 ): Promise<RecipeFormState> {
   const session = await auth();
+  const userId = getAuthenticatedUserId(session);
 
-  if (!isAuthenticated(session)) {
+  if (!userId) {
     return createErrorState(RECIPE_UNAUTHORIZED_MESSAGE, {}, prevState.recipe);
   }
 
@@ -561,6 +566,7 @@ export async function createRecipe(
         description: parsedValues.data.description,
         imageUrl: imageResult.resolvedImage!.imageUrl,
         ingredients: validatedIngredients.ingredients!,
+        ownerId: userId,
       }),
     );
 
@@ -593,8 +599,9 @@ export async function updateRecipe(
   formData: FormData,
 ): Promise<RecipeFormState> {
   const session = await auth();
+  const userId = getAuthenticatedUserId(session);
 
-  if (!isAuthenticated(session)) {
+  if (!userId) {
     return createErrorState(RECIPE_UNAUTHORIZED_MESSAGE);
   }
 
@@ -620,11 +627,16 @@ export async function updateRecipe(
     where: { id },
     select: {
       imageUrl: true,
+      ownerId: true,
     },
   });
 
   if (!currentRecipe) {
     return createErrorState(RECIPE_UPDATE_ERROR_MESSAGE);
+  }
+
+  if (currentRecipe.ownerId !== userId) {
+    return createErrorState(RECIPE_FORBIDDEN_MESSAGE);
   }
 
   const currentImageUrl = currentRecipe.imageUrl ?? '';
@@ -688,11 +700,35 @@ export async function deleteRecipe(
   id: string,
 ): Promise<RecipeDeleteResult> {
   const session = await auth();
+  const userId = getAuthenticatedUserId(session);
 
-  if (!isAuthenticated(session)) {
+  if (!userId) {
     return {
       status: 'error',
       message: RECIPE_UNAUTHORIZED_MESSAGE,
+      deletedRecipeId: null,
+    };
+  }
+
+  const existingRecipe = await prisma.recipe.findUnique({
+    where: { id },
+    select: {
+      ownerId: true,
+    },
+  });
+
+  if (!existingRecipe) {
+    return {
+      status: 'error',
+      message: RECIPE_DELETE_ERROR_MESSAGE,
+      deletedRecipeId: null,
+    };
+  }
+
+  if (existingRecipe.ownerId !== userId) {
+    return {
+      status: 'error',
+      message: RECIPE_FORBIDDEN_MESSAGE,
       deletedRecipeId: null,
     };
   }
